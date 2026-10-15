@@ -67,7 +67,8 @@
         "deb"
       ],
       "icon": "build/icon.png",
-      "category": "Game"
+      "category": "Game",
+      "maintainer": "jackgary86-dev <331085007+jackgary86-dev@users.noreply.github.com>"
     },
     "publish": {
       "provider": "github",
