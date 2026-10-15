@@ -51,8 +51,8 @@ export class ShotView {
     this.heads.renderOrder = 11;
     this.heads.frustumCulled = false;
     this.group.add(this.lines, this.heads);
-    this.projectile = new ProjectileView(roundById(shot.input.roundId), shot.traces, shot.impacts);
-    this.group.add(this.projectile.object);
+    this.projectile = new ProjectileView(roundById(shot.input.roundId), shot.traces, shot.impacts, shot.input.seed);
+    this.group.add(this.projectile.object, ...this.projectile.chunkObjects);
 
     for (const imp of shot.impacts) {
       const color = imp.kind === 'pen' ? 0x46ff7a : imp.kind === 'nonpen' ? 0xff3b2f : imp.kind === 'ricochet' ? 0xffa040 : imp.kind === 'era' ? 0xc8ff80 : 0xffe060;

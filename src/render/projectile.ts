@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { ImpactEvent, Round, Trace } from '../sim/types';
+import { makeRng } from '../sim/vec';
 
 // ------------------------------------------------------------------ pure: where is the shell at time T?
 
@@ -250,9 +251,13 @@ export class ProjectileView {
   private glow: THREE.PointLight;
   private trail: THREE.Mesh;
   private tumbleAxis = new THREE.Vector3(0.3, 1, 0.2).normalize();
+  /** Shards of the shell body thrown when it shatters or bursts. */
+  private chunks: { mesh: THREE.Mesh; dir: THREE.Vector3; speed: number; spin: THREE.Vector3 }[] = [];
+  private breakAt: { t: number; point: THREE.Vector3 } | null = null;
 
-  constructor(readonly round: Round, readonly traces: Trace[], readonly impacts: ImpactEvent[]) {
+  constructor(readonly round: Round, readonly traces: Trace[], readonly impacts: ImpactEvent[], seed = 1) {
     this.parts = buildProjectile(round);
+    this.buildChunks(seed);
     this.glow = new THREE.PointLight(0xff8a40, 0, 0.5, 2);
     this.parts.group.add(this.glow);
     // Fading ribbon behind the nose: a unit cone along -X, scaled to the recent path each frame.
@@ -268,7 +273,52 @@ export class ProjectileView {
     return this.parts.group;
   }
 
+  /** Shatter / burst: 6–10 shards cut to the shell's calibre, scattered deterministically from the seed. */
+  private buildChunks(seed: number) {
+    const ev = this.impacts.find((i) => i.kind === 'shatter' || i.kind === 'explode');
+    if (!ev) return;
+    this.breakAt = { t: ev.t, point: new THREE.Vector3(ev.point.x, ev.point.y, ev.point.z) };
+    const rng = makeRng(seed ^ 0x9e3779b9);
+    const cal = this.round.caliber / 1000;
+    const n = 6 + Math.floor(rng() * 5);
+    const axis = new THREE.Vector3(ev.normal.x, ev.normal.y, ev.normal.z).normalize();
+    // Shatter sprays back off the face; a burst goes everywhere.
+    const burst = ev.kind === 'explode';
+    const mat = (this.parts.body.material as THREE.MeshStandardMaterial).clone();
+    for (let i = 0; i < n; i++) {
+      const size = cal * (0.18 + rng() * 0.3);
+      const geo = new THREE.TetrahedronGeometry(size, 0);
+      geo.scale(1, 0.5 + rng(), 0.6 + rng() * 0.6);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.visible = false;
+      mesh.renderOrder = 15;
+      const d = new THREE.Vector3(rng() * 2 - 1, rng() * 2 - 1, rng() * 2 - 1).normalize();
+      if (!burst && d.dot(axis) < 0.2) d.add(axis.clone().multiplyScalar(1.2)).normalize();
+      this.chunks.push({ mesh, dir: d, speed: (burst ? 4 : 2.5) * (0.5 + rng()), spin: new THREE.Vector3(rng(), rng(), rng()).multiplyScalar(12) });
+    }
+  }
+
+  /** Chunks live in world space beside the projectile group. */
+  get chunkObjects() {
+    return this.chunks.map((c) => c.mesh);
+  }
+
+  private updateChunks(T: number) {
+    if (!this.breakAt) return;
+    const age = T - this.breakAt.t;
+    for (const c of this.chunks) {
+      c.mesh.visible = age >= 0 && age < 1.4;
+      if (!c.mesh.visible) continue;
+      const travel = (c.speed * (1 - Math.exp(-age * 3))) / 3; // drag-limited
+      c.mesh.position.copy(this.breakAt.point).addScaledVector(c.dir, travel).add(new THREE.Vector3(0, -4.9 * age * age, 0));
+      if (c.mesh.position.y < 0.02) c.mesh.position.y = 0.02;
+      c.mesh.rotation.set(c.spin.x * age, c.spin.y * age, c.spin.z * age);
+      (c.mesh.material as THREE.MeshStandardMaterial).opacity = 1;
+    }
+  }
+
   update(T: number) {
+    this.updateChunks(T);
     const p = shellPoseAt(this.traces, this.impacts, T, this.round.family);
     const g = this.parts.group;
     g.visible = p.phase !== 'gone' && T >= 0;
@@ -367,6 +417,10 @@ export class ProjectileView {
   }
 
   dispose() {
+    for (const c of this.chunks) {
+      c.mesh.removeFromParent();
+      c.mesh.geometry.dispose();
+    }
     this.parts.group.traverse((o) => {
       const m = o as THREE.Mesh;
       m.geometry?.dispose?.();
