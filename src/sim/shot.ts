@@ -1,7 +1,7 @@
 // Shot simulation: traces the projectile through armor and interior and records a replayable timeline.
 import { normalOf, rayBox, rayPlate } from './geometry';
 import { isKinetic, losThickness, penetrationAt, ricochetChance } from './penetration';
-import { aliveCrew, cloneState } from './state';
+import { aliveCrew, checkIncapacitated, cloneState } from './state';
 import type {
   Crew,
   CrewZone,
@@ -215,8 +215,14 @@ export class ShotSim {
     this.res.moduleHits.push({ t, moduleId: m.id, damage: dmg, hpAfter: hp - dmg, point });
   }
 
-  damageCrew(_c: Crew, _z: CrewZone, _amount: number, _point: Vec3, _dir: Vec3, _t: number, _len: number) {
-    // Crew wounds are modelled in the gel dummy system.
+  /** Gel dummy hit: subtract zone HP, record a wound channel, check incapacitation. */
+  damageCrew(c: Crew, z: CrewZone, amount: number, point: Vec3, dir: Vec3, t: number, length: number) {
+    const st = this.state.crew[c.id];
+    const mult = z.zone === 'head' ? 1.6 : z.zone === 'torso' ? 1.1 : 0.8;
+    const dmg = amount * mult;
+    st.zoneHp[z.zone] -= dmg;
+    this.res.crewHits.push({ t, crewId: c.id, zone: z.zone, point, dir, length, damage: dmg });
+    if (!st.incapacitated && checkIncapacitated(this.v, c.id, st.zoneHp)) st.incapacitated = true;
   }
 
   /** Spall cone thrown off the inside face after a penetration. */

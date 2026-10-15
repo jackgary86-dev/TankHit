@@ -12,6 +12,30 @@ export function initialState(v: Vehicle): VehicleState {
   return { moduleHp, ammoGone: {}, crew, eraSpent: {}, destroyed: false, onFire: false };
 }
 
+/** Head or torso destroyed, or more than 70% of total gel HP lost. */
+export function checkIncapacitated(v: Vehicle, crewId: string, zoneHp: Record<CrewZoneId, number>): boolean {
+  const c = v.crew.find((x) => x.id === crewId)!;
+  if (zoneHp.head <= 0 || zoneHp.torso <= 0) return true;
+  let max = 0;
+  let cur = 0;
+  const seen = new Set<string>();
+  for (const z of c.zones) {
+    if (seen.has(z.zone)) continue;
+    seen.add(z.zone);
+    max += z.hp;
+    cur += Math.max(0, zoneHp[z.zone]);
+  }
+  return cur / max < 0.3;
+}
+
+export const STATION_LOSS: Record<string, string> = {
+  driver: "Can't drive",
+  gunner: "Gun can't fire",
+  commander: 'No commander',
+  loader: 'No reloads',
+  radioman: 'Bow MG out',
+};
+
 export const cloneState = (s: VehicleState): VehicleState => structuredClone(s);
 
 export type WoundLevel = 'Unhurt' | 'Lightly wounded' | 'Severely wounded' | 'Incapacitated';

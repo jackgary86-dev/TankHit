@@ -69,3 +69,23 @@ describe('spall', () => {
     expect(shot.summary.spallCount).toBe(0);
   });
 });
+
+describe('gel crew dummies', () => {
+  it('a turret penetration wounds crew and records wound channels', () => {
+    const r = roundById('pzgr39');
+    // Through the turret side at gunner/commander height.
+    const shot = simulateShot(t34, r, { vehicleId: t34.id, roundId: r.id, distance: 100, origin: v3(0.6, 1.55, 6), dir: v3(0, 0, -1), seed: 11 }, initialState(t34));
+    expect(shot.summary.penetrated).toBe(true);
+    expect(shot.crewHits.length).toBeGreaterThan(0);
+    for (const w of shot.crewHits) expect(w.length).toBeGreaterThan(0);
+    expect(shot.summary.crewHit.length).toBeGreaterThan(0);
+  });
+
+  it('heavy enough damage incapacitates a crew member', () => {
+    const r = roundById('m829a1');
+    // Straight through the driver's head and torso from above-front.
+    const shot = simulateShot(t34, r, { vehicleId: t34.id, roundId: r.id, distance: 100, origin: v3(1.37, 6, 0.42), dir: v3(0, -1, 0), seed: 2 }, initialState(t34));
+    expect(shot.stateAfter.crew.driver.incapacitated).toBe(true);
+    expect(shot.summary.crewIncapacitated).toContain('driver');
+  });
+});

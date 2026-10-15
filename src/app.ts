@@ -7,7 +7,7 @@ import { buildTank, type TankView } from './render/tank';
 import { cameraSectionPlane, setSectionPlane, setXray, shotSectionPlane, type SectionMode } from './render/xray';
 import { penetrationAt } from './sim/penetration';
 import { previewShot, simulateShot, type Preview } from './sim/shot';
-import { initialState, woundLevel } from './sim/state';
+import { initialState, STATION_LOSS, woundLevel } from './sim/state';
 import type { Round, ShotResult, VehicleState } from './sim/types';
 import { DEG, v3, type Vec3 } from './sim/vec';
 import { fmt, h, select } from './ui/dom';
@@ -339,7 +339,10 @@ export class App {
     const sev = s.verdict.startsWith('Catastrophic') || s.verdict === 'Knocked out' ? 'bad' : s.verdict === 'Disabled' || s.verdict === 'Crew injured' ? 'warn' : s.verdict.startsWith('Non') || s.verdict === 'Ricochet' ? 'muted' : 'ok';
     const crewRows = v.crew.map((c) => {
       const lvl = woundLevel(v, shot.stateAfter, c.id);
-      return h('div', { class: `crewrow ${lvl.split(' ')[0].toLowerCase()}` }, h('span', {}, c.name), h('span', {}, lvl));
+      const zones = [...new Set(shot.crewHits.filter((x) => x.crewId === c.id).map((x) => x.zone))];
+      return h('div', { class: `crewrow ${lvl.split(' ')[0].toLowerCase()}` },
+        h('span', {}, c.name, zones.length ? h('small', {}, ` ${zones.join(', ')}`) : null),
+        h('span', {}, lvl === 'Incapacitated' ? `${lvl} · ${STATION_LOSS[c.role]}` : lvl));
     });
     this.right.replaceChildren(
       h('h2', {}, `Shot ${this.current + 1}`),
