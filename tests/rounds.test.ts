@@ -22,6 +22,7 @@ function testVehicle(front: Parameters<typeof frontQuad>[8], extra: (f: ReturnTy
     modules: [],
     crew: [],
     racks: [],
+    turretPivot: v3(0, 0, 0),
     visual: t34.visual,
   };
 }

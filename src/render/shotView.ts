@@ -186,13 +186,15 @@ export class ShotView {
     }
     // Catastrophic: the turret is thrown off.
     const tur = this.view.turret;
+    const pv = this.view.pivot;
+    const yaw = this.view.turretYaw;
     if (tossAge >= 0) {
       const u = Math.min(tossAge, 1.6);
-      tur.position.set(-0.6 * u, Math.max(0, 4 * u - 2.1 * u * u), 0.9 * u);
-      tur.rotation.set(u * 0.9, u * 0.6, u * 0.4);
+      tur.position.set(pv.x - 0.6 * u, Math.max(0, 4 * u - 2.1 * u * u), pv.z + 0.9 * u);
+      tur.rotation.set(u * 0.9, yaw + u * 0.6, u * 0.4);
     } else {
-      tur.position.set(0, 0, 0);
-      tur.rotation.set(0, 0, 0);
+      tur.position.copy(pv);
+      tur.rotation.set(0, yaw, 0);
     }
   }
 
@@ -264,8 +266,8 @@ export class ShotView {
       (m.material as THREE.Material | undefined)?.dispose?.();
     });
     this.group.removeFromParent();
-    this.view.turret.position.set(0, 0, 0);
-    this.view.turret.rotation.set(0, 0, 0);
+    this.view.turret.position.copy(this.view.pivot);
+    this.view.turret.rotation.set(0, this.view.turretYaw, 0);
   }
 }
 

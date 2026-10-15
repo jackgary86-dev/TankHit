@@ -1,4 +1,5 @@
 // Shot simulation: traces the projectile through armor and interior and records a replayable timeline.
+import { dirToLocal, dirToWorld, groupToWorld, IDENTITY, toLocal, type Frame } from './frame';
 import { normalOf, rayBox, rayPlate } from './geometry';
 import { fuzeArms, isKinetic, losThickness, penetrationAt, ricochetChance, shatterChance, velocityAt } from './penetration';
 import { aliveCrew, checkIncapacitated, cloneState } from './state';
@@ -33,28 +34,36 @@ export interface CollectOpts {
   maxT?: number;
 }
 
+/** Outward plate normal in world space, accounting for turret traverse. */
+export const worldNormal = (p: Plate, f: Frame) => (p.group === 'turret' ? dirToWorld(normalOf(p), f) : normalOf(p));
+
 /** Everything the ray touches, sorted by distance. Spent ERA and destroyed ammo are skipped. */
-export function collectHits(v: Vehicle, s: VehicleState, origin: Vec3, dir: Vec3, o: CollectOpts = {}): HitTarget[] {
+export function collectHits(v: Vehicle, s: VehicleState, origin: Vec3, dir: Vec3, o: CollectOpts = {}, f: Frame = IDENTITY): HitTarget[] {
   const maxT = o.maxT ?? Infinity;
   const out: HitTarget[] = [];
+  // Turret-group geometry is tested in the turret's local frame; distances along the ray are unchanged.
+  const oL = toLocal(origin, f);
+  const dL = dirToLocal(dir, f);
+  const O = (g: string) => (g === 'turret' ? oL : origin);
+  const D = (g: string) => (g === 'turret' ? dL : dir);
   if (o.plates !== false) {
     for (const p of v.plates) {
       if (p.kind === 'era' && s.eraSpent[p.id]) continue;
-      const t = rayPlate(origin, dir, p);
+      const t = rayPlate(O(p.group), D(p.group), p);
       if (t !== null && t <= maxT) out.push({ kind: 'plate', t, plate: p });
     }
   }
   if (o.modules !== false) {
     for (const m of v.modules) {
       if (s.ammoGone[m.id]) continue;
-      const t = rayBox(origin, dir, m.box);
+      const t = rayBox(O(m.group), D(m.group), m.box);
       if (t !== null && t <= maxT) out.push({ kind: 'module', t, module: m });
     }
   }
   if (o.crew !== false) {
     for (const c of v.crew) {
       for (const z of c.zones) {
-        const t = rayBox(origin, dir, z.box);
+        const t = rayBox(O(c.group), D(c.group), z.box);
         if (t !== null && t <= maxT) out.push({ kind: 'crew', t, crew: c, zone: z });
       }
     }
@@ -80,7 +89,7 @@ export function eraFactor(p: Plate, r: Round): number {
 export const JET_AIR_LOSS = 90;
 
 /** Impact angle in degrees between the ray and the plate normal (0 = perpendicular). */
-export const impactAngle = (dir: Vec3, p: Plate) => Math.acos(Math.min(1, Math.abs(dot(dir, normalOf(p))))) / DEG;
+export const impactAngle = (dir: Vec3, p: Plate, f: Frame = IDENTITY) => Math.acos(Math.min(1, Math.abs(dot(dir, worldNormal(p, f))))) / DEG;
 
 export interface Preview {
   plate: Plate;
@@ -94,12 +103,15 @@ export interface Preview {
 }
 
 /** Cheap look-ahead used by the aiming UI: first plate struck, its LOS and the round's penetration. */
-export function previewShot(v: Vehicle, s: VehicleState, r: Round, origin: Vec3, dir: Vec3, distance: number): Preview | null {
-  const hits = collectHits(v, s, origin, dir, { modules: false, crew: false });
+export const frameOf = (v: Vehicle, yawDeg = 0): Frame => ({ pivot: v.turretPivot, yaw: yawDeg * DEG });
+
+export function previewShot(v: Vehicle, s: VehicleState, r: Round, origin: Vec3, dir: Vec3, distance: number, yawDeg = 0): Preview | null {
+  const f = frameOf(v, yawDeg);
+  const hits = collectHits(v, s, origin, dir, { modules: false, crew: false }, f);
   const first = hits.find((h) => h.kind === 'plate') as Extract<HitTarget, { kind: 'plate' }> | undefined;
   if (!first) return null;
   const p = first.plate;
-  const angleDeg = impactAngle(dir, p);
+  const angleDeg = impactAngle(dir, p, f);
   let losMm = p.kind === 'era' ? 0 : losThickness(p, angleDeg, r);
   let penMm = penetrationAt(r, distance);
   // Fold ERA / spaced armor into the main plate behind it (within 0.8 m).
@@ -107,7 +119,7 @@ export function previewShot(v: Vehicle, s: VehicleState, r: Round, origin: Vec3,
     if (p.kind === 'era') penMm *= eraFactor(p, r);
     const behind = hits.find((h) => h.kind === 'plate' && h.plate.kind === 'plate' && h.t - first.t < 0.8) as typeof first | undefined;
     if (behind) {
-      losMm += losThickness(behind.plate, impactAngle(dir, behind.plate), r);
+      losMm += losThickness(behind.plate, impactAngle(dir, behind.plate, f), r);
       if (r.family === 'HEAT') penMm -= JET_AIR_LOSS * (behind.t - first.t);
     }
   }
@@ -126,6 +138,11 @@ export function previewShot(v: Vehicle, s: VehicleState, r: Round, origin: Vec3,
 export class ShotSim {
   readonly rng: Rng;
   readonly state: VehicleState;
+  readonly frame: Frame;
+  /** World-space outward normal of a plate. */
+  readonly nrm = (p: Plate) => worldNormal(p, this.frame);
+  /** World position of a point authored in a group's space. */
+  readonly wp = (g: 'hull' | 'turret', p: Vec3) => groupToWorld(g, p, this.frame);
   readonly res: ShotResult;
   penetrated = false;
   armorDefeated = 0;
@@ -140,6 +157,7 @@ export class ShotSim {
 
   constructor(readonly v: Vehicle, readonly r: Round, readonly input: ShotInput, before: VehicleState) {
     this.rng = makeRng(input.seed);
+    this.frame = frameOf(v, input.turretYaw ?? 0);
     this.state = cloneState(before);
     this.res = {
       input,
@@ -168,7 +186,7 @@ export class ShotSim {
     const { v, r, input, state } = this;
     const dir = norm(input.dir);
     let P = penetrationAt(r, input.distance);
-    const hits = collectHits(v, state, input.origin, dir);
+    const hits = collectHits(v, state, input.origin, dir, {}, this.frame);
     let pos = input.origin;
     let t = 0;
     let entered = false;
@@ -195,8 +213,8 @@ export class ShotSim {
       pos = point;
       if (h.kind === 'plate') {
         const p = h.plate;
-        const angle = impactAngle(dir, p);
-        const n = normalOf(p);
+        const angle = impactAngle(dir, p, this.frame);
+        const n = this.nrm(p);
         const entering = dot(dir, n) < 0;
         if (p.kind === 'era') {
           P *= eraFactor(p, r);
@@ -256,7 +274,7 @@ export class ShotSim {
   private strike(): { h: Extract<HitTarget, { kind: 'plate' }>; point: Vec3; t: number; angle: number; hits: HitTarget[] } | null {
     const { v, input, state } = this;
     const dir = norm(input.dir);
-    const hits = collectHits(v, state, input.origin, dir);
+    const hits = collectHits(v, state, input.origin, dir, {}, this.frame);
     const idx = hits.findIndex((h) => h.kind === 'plate');
     if (idx < 0) {
       this.trace('shell', input.origin, madd(input.origin, dir, 14), 0, SPEED.approach, 0);
@@ -265,7 +283,7 @@ export class ShotSim {
     const h = hits[idx] as Extract<HitTarget, { kind: 'plate' }>;
     const point = madd(input.origin, dir, h.t);
     const t = this.trace('shell', input.origin, point, 0, SPEED.approach, 1);
-    const angle = impactAngle(dir, h.plate);
+    const angle = impactAngle(dir, h.plate, this.frame);
     if (!this.firstPlate) {
       this.firstPlate = h.plate.id;
       this.firstAngle = angle;
@@ -280,7 +298,7 @@ export class ShotSim {
     const dir = norm(this.input.dir);
     const s0 = this.strike();
     if (!s0) return this.finish();
-    const n0 = normalOf(s0.h.plate);
+    const n0 = this.nrm(s0.h.plate);
     if (this.rng() < ricochetChance(r, s0.angle, s0.h.plate.mm)) {
       this.res.impacts.push({ t: s0.t, kind: 'ricochet', point: s0.point, normal: n0, plateId: s0.h.plate.id, angleDeg: s0.angle });
       const refl = norm(sub(dir, scale(n0, 2 * dot(dir, n0))));
@@ -301,8 +319,8 @@ export class ShotSim {
       pos = point;
       if (h.kind === 'plate') {
         const p = h.plate;
-        const angle = impactAngle(dir, p);
-        const n = normalOf(p);
+        const angle = impactAngle(dir, p, this.frame);
+        const n = this.nrm(p);
         const entering = dot(dir, n) < 0;
         if (p.kind === 'era') {
           P *= eraFactor(p, r);
@@ -343,7 +361,7 @@ export class ShotSim {
     const s0 = this.strike();
     if (!s0) return this.finish();
     const p = s0.h.plate;
-    const n = normalOf(p);
+    const n = this.nrm(p);
     if (s0.angle > 80) {
       this.res.impacts.push({ t: s0.t, kind: 'ricochet', point: s0.point, normal: n, plateId: p.id, angleDeg: s0.angle });
       return this.finish();
@@ -369,7 +387,7 @@ export class ShotSim {
     const s0 = this.strike();
     if (!s0) return this.finish();
     const p = s0.h.plate;
-    const n = normalOf(p);
+    const n = this.nrm(p);
     if (this.rng() < ricochetChance(r, s0.angle, p.mm)) {
       this.res.impacts.push({ t: s0.t, kind: 'ricochet', point: s0.point, normal: n, plateId: p.id, angleDeg: s0.angle });
       return this.finish();
@@ -392,7 +410,7 @@ export class ShotSim {
       for (const c of v.crew.filter((c) => c.group === p.group || p.group === 'hull')) {
         const torso = c.zones.find((z) => z.zone === 'torso')!;
         const head = c.zones.find((z) => z.zone === 'head')!;
-        const hc = { x: (head.box.min.x + head.box.max.x) / 2, y: (head.box.min.y + head.box.max.y) / 2, z: (head.box.min.z + head.box.max.z) / 2 };
+        const hc = this.wp(c.group, { x: (head.box.min.x + head.box.max.x) / 2, y: (head.box.min.y + head.box.max.y) / 2, z: (head.box.min.z + head.box.max.z) / 2 });
         if (dist(hc, s0.point) > 1.6) continue;
         this.damageCrew(c, torso, 22 * r.filler, hc, { x: 0, y: -1, z: 0 }, s0.t + 0.05, 0.04);
         this.damageCrew(c, head, 10 * r.filler, hc, { x: 0, y: -1, z: 0 }, s0.t + 0.05, 0.03);
@@ -439,7 +457,7 @@ export class ShotSim {
     }
     if (!this.ignitions.size) return;
     const ammo = v.modules.filter((m) => m.ammo && !state.ammoGone[m.id]);
-    const centre = (m: Module) => ({ x: (m.box.min.x + m.box.max.x) / 2, y: (m.box.min.y + m.box.max.y) / 2, z: (m.box.min.z + m.box.max.z) / 2 });
+    const centre = (m: Module) => this.wp(m.group, { x: (m.box.min.x + m.box.max.x) / 2, y: (m.box.min.y + m.box.max.y) / 2, z: (m.box.min.z + m.box.max.z) / 2 });
     const lit = new Map<string, number>();
     const queue = [...this.ignitions.entries()].map(([id, t]) => ({ id, t }));
     while (queue.length) {
@@ -502,7 +520,7 @@ export class ShotSim {
     if (!state.destroyed) {
       for (const c of v.crew) {
         const torso = c.zones.find((z) => z.zone === 'torso')!;
-        const tc = { x: (torso.box.min.x + torso.box.max.x) / 2, y: (torso.box.min.y + torso.box.max.y) / 2, z: (torso.box.min.z + torso.box.max.z) / 2 };
+        const tc = this.wp(c.group, { x: (torso.box.min.x + torso.box.max.x) / 2, y: (torso.box.min.y + torso.box.max.y) / 2, z: (torso.box.min.z + torso.box.max.z) / 2 });
         for (const [id, t] of lit) {
           const m = v.modules.find((x) => x.id === id)!;
           if (v.racks.find((r) => r.id === m.ammo!.rack)?.isolated) continue;
@@ -555,7 +573,7 @@ export class ShotSim {
       const d = randomInCone(axis, halfDeg * DEG, this.rng);
       let E = energy * (0.55 + this.rng() * 0.9);
       const range = 1.5 + E / 18;
-      const hits = collectHits(this.v, this.state, origin, d, { maxT: range });
+      const hits = collectHits(this.v, this.state, origin, d, { maxT: range }, this.frame);
       let end = madd(origin, d, range);
       for (const h of hits) {
         const p = madd(origin, d, h.t);

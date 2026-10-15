@@ -29,7 +29,10 @@ export interface TankView {
   vehicle: Vehicle;
   root: THREE.Group;
   hull: THREE.Group;
+  /** Outer turret group: positioned at the pivot and yawed. */
   turret: THREE.Group;
+  pivot: THREE.Vector3;
+  turretYaw: number;
   plateMeshes: Map<string, THREE.Mesh>;
   plateEdges: Map<string, THREE.LineSegments>;
   moduleMeshes: Map<string, THREE.Mesh>;
@@ -144,13 +147,19 @@ export function buildTank(v: Vehicle): TankView {
   root.name = v.id;
   const hull = new THREE.Group();
   const turret = new THREE.Group();
+  const pivot = new THREE.Vector3(v.turretPivot.x, 0, v.turretPivot.z);
+  turret.position.copy(pivot);
+  // Turret children are authored in vehicle space; the inner group shifts them so the outer group yaws about the pivot.
+  const turretInner = new THREE.Group();
+  turretInner.position.copy(pivot).negate();
+  turret.add(turretInner);
   root.add(hull, turret);
   const view: TankView = {
-    vehicle: v, root, hull, turret,
+    vehicle: v, root, hull, turret, pivot, turretYaw: 0,
     plateMeshes: new Map(), plateEdges: new Map(), moduleMeshes: new Map(), crewGroups: new Map(), zoneMeshes: new Map(),
     exterior: [], interior: [],
   };
-  const groupOf = (g: 'hull' | 'turret') => (g === 'hull' ? hull : turret);
+  const groupOf = (g: 'hull' | 'turret') => (g === 'hull' ? hull : turretInner);
 
   for (const p of v.plates) {
     const geo = plateGeometry(p);
@@ -192,8 +201,15 @@ export function buildTank(v: Vehicle): TankView {
   }
 
   addRunningGear(v, hull, view);
-  addBarrel(v, turret, view);
+  addBarrel(v, turretInner, view);
   return view;
+}
+
+/** Point the turret (radians, positive = right). */
+export function setTurretYaw(view: TankView, yaw: number) {
+  view.turretYaw = yaw;
+  view.turret.position.copy(view.pivot);
+  view.turret.rotation.set(0, yaw, 0);
 }
 
 const gelMaterial = () =>

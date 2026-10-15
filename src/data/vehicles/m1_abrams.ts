@@ -23,6 +23,7 @@ export const M1_ABRAMS: Vehicle = {
       ufp: { mm: 50, run: 2.0 },
       lfp: { mm: 0, run: 0.67, layers: [{ mat: 'rha', mm: 40 }, { mat: 'nera', mm: 300 }, { mat: 'rha', mm: 40 }] },
       side: 30, rear: 30, roof: 30, floor: 25,
+      ring: { x: TX, r: 1.0 },
     }),
     ...turretPlates({
       center: { x: TX, z: 0 }, y0: 1.43, y1: 2.2,
@@ -58,6 +59,7 @@ export const M1_ABRAMS: Vehicle = {
     dummy('commander', 'commander', 'Commander', 'turret', v3(TX - 0.25, 1.2, -0.5)),
     dummy('loader', 'loader', 'Loader', 'turret', v3(TX - 0.1, 1.38, 0.5), { standing: true, scale: 0.9 }),
   ],
+  turretPivot: v3(TX, 0, 0),
   racks: [rack('bustle', 'Turret bustle (isolated)', 6, true), rack('hull', 'Hull ready rack', 3)],
   visual: {
     hullLength: 7.6, hullWidth: 2.3, trackWidth: 0.63, groundClearance: 0.48,

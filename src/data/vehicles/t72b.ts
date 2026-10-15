@@ -15,6 +15,7 @@ const hull = hullPlates({
   ufp: { mm: 0, run: 0.84, layers: [{ mat: 'rha', mm: 16 }, { mat: 'rha', mm: 60 }, { mat: 'textolite', mm: 105 }, { mat: 'rha', mm: 50 }] },
   lfp: { mm: 80, run: 0.88 },
   side: 80, rear: 40, roof: 20, floor: 20,
+  ring: { x: TX, r: 0.95 },
 });
 const turret = turretPlates({
   center: { x: TX, z: 0 }, y0: 1.32, y1: 2.0,
@@ -83,6 +84,7 @@ export const T72B: Vehicle = {
     dummy('gunner', 'gunner', 'Gunner', 'turret', v3(TX + 0.1, 1.0, 0.45)),
     dummy('commander', 'commander', 'Commander', 'turret', v3(TX + 0.0, 1.0, -0.45)),
   ],
+  turretPivot: v3(TX, 0, 0),
   racks: [rack('carousel', 'Carousel autoloader', 3), rack('hull', 'Hull racks', 3)],
   visual: {
     hullLength: 6.7, hullWidth: 2.1, trackWidth: 0.58, groundClearance: 0.47,

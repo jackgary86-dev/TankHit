@@ -17,6 +17,7 @@ export const T34_85: Vehicle = {
       ufp: { mm: 45, run: 0.87 },
       lfp: { mm: 45, run: 0.6 },
       side: 45, rear: 45, roof: 20, floor: 20,
+      ring: { x: TX, r: 0.8 },
     }),
     ...turretPlates({
       center: { x: TX, z: 0 }, y0: 1.35, y1: 2.0,
@@ -46,6 +47,7 @@ export const T34_85: Vehicle = {
     dummy('commander', 'commander', 'Commander', 'turret', v3(TX - 0.55, 1.05, 0.42)),
     dummy('loader', 'loader', 'Loader', 'turret', v3(TX - 0.1, 1.17, -0.45), { standing: true, scale: 0.9 }),
   ],
+  turretPivot: v3(TX, 0, 0),
   racks: [rack('floor', 'Hull floor racks', 7), rack('turret', 'Turret bustle rack', 4)],
   visual: {
     hullLength: 5.9, hullWidth: 2.0, trackWidth: 0.5, groundClearance: 0.4,

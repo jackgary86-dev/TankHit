@@ -117,6 +117,8 @@ export interface Vehicle {
   modules: Module[];
   crew: Crew[];
   racks: AmmoRack[];
+  /** Turret rotates about this point (y is ignored). */
+  turretPivot: Vec3;
   /** Visual-only parameters for the renderer. */
   visual: VehicleVisual;
 }
@@ -275,6 +277,8 @@ export interface ShotInput {
   origin: Vec3;
   dir: Vec3;
   seed: number;
+  /** Turret traverse in degrees, positive toward the right side. */
+  turretYaw?: number;
 }
 
 export interface ShotResult {

@@ -60,6 +60,8 @@ export interface HullSpec {
   mat?: MaterialId;
   /** Replace the upper front plate with a two-plate pike nose. */
   pike?: boolean;
+  /** Turret ring opening in the roof: centre x and half-size. */
+  ring?: { x: number; r: number };
 }
 
 export function hullPlates(h: HullSpec): Plate[] {
@@ -104,10 +106,23 @@ export function hullPlates(h: HullSpec): Plate[] {
     plate('h-side-l', 'Hull side (left)', 'hull', side(W2), h.side, inside, mat),
     plate('h-side-r', 'Hull side (right)', 'hull', side(-W2), h.side, inside, mat),
     plate('h-rear', 'Hull rear', 'hull', [v3(-L2, y0, -W2), v3(-L2, y0, W2), v3(-L2, top, W2), v3(-L2, top, -W2)], h.rear, inside, mat),
-    plate('h-roof', 'Hull roof', 'hull', [v3(xUfp, top, -W2), v3(xUfp, top, W2), v3(-L2, top, W2), v3(-L2, top, -W2)], h.roof, inside, mat),
+    ...roofPlates(h, xUfp, top, L2, W2, inside, mat),
     plate('h-floor', 'Hull floor', 'hull', [v3(-L2, y0, -W2), v3(-L2, y0, W2), v3(xLfp, y0, W2), v3(xLfp, y0, -W2)], h.floor, inside, mat),
   );
   return plates;
+}
+
+/** Hull roof, cut around the turret ring so shots can pass between turret and hull. */
+function roofPlates(h: HullSpec, xUfp: number, top: number, L2: number, W2: number, inside: Vec3, mat: MaterialId): Plate[] {
+  const quad = (id: string, name: string, x0: number, x1: number, z0: number, z1: number) =>
+    plate(id, name, 'hull', [v3(x0, top, z0), v3(x0, top, z1), v3(x1, top, z1), v3(x1, top, z0)], h.roof, inside, mat);
+  if (!h.ring) return [quad('h-roof', 'Hull roof', xUfp, -L2, -W2, W2)];
+  const { x, r } = h.ring;
+  const out: Plate[] = [];
+  if (x + r < xUfp) out.push(quad('h-roof-f', 'Hull roof (front)', x + r, xUfp, -W2, W2));
+  if (x - r > -L2) out.push(quad('h-roof-r', 'Hull roof (rear)', -L2, x - r, -W2, W2));
+  out.push(quad('h-roof-l', 'Hull roof (left)', x - r, x + r, r, W2), quad('h-roof-rt', 'Hull roof (right)', x - r, x + r, -W2, -r));
+  return out;
 }
 
 // ---------------------------------------------------------------- turret

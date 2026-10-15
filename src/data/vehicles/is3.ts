@@ -18,6 +18,7 @@ export const IS3: Vehicle = {
       lfp: { mm: 110, run: 0.6 },
       side: 90, rear: 60, roof: 20, floor: 20,
       pike: true,
+      ring: { x: TX, r: 0.85 },
     }),
     ...turretPlates({
       center: { x: TX, z: 0 }, y0: 1.3, y1: 1.95,
@@ -47,6 +48,7 @@ export const IS3: Vehicle = {
     dummy('commander', 'commander', 'Commander', 'turret', v3(TX - 0.6, 0.95, 0.4)),
     dummy('loader', 'loader', 'Loader', 'turret', v3(TX - 0.3, 1.12, -0.45), { standing: true, scale: 0.88 }),
   ],
+  turretPivot: v3(TX, 0, 0),
   racks: [rack('turret', 'Turret projectile rack', 4), rack('charges', 'Floor propellant charges', 5)],
   visual: {
     hullLength: 6.2, hullWidth: 2.0, trackWidth: 0.58, groundClearance: 0.45,

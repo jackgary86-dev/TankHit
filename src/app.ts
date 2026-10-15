@@ -3,7 +3,7 @@ import { FAMILIES, ROUNDS, roundById } from './data/rounds';
 import { VEHICLES, vehicleById } from './data/vehicles';
 import { createScene, type SceneCtx } from './render/scene';
 import { ShotView, applyDamage } from './render/shotView';
-import { buildTank, type TankView } from './render/tank';
+import { buildTank, setTurretYaw, type TankView } from './render/tank';
 import { muted, setMuted, sfx } from './render/audio';
 import { cameraSectionPlane, HEAT_STOPS, heatColor, setSectionPlane, setXray, shotSectionPlane, type SectionMode } from './render/xray';
 import { penetrationAt } from './sim/penetration';
@@ -30,6 +30,7 @@ export class App {
   respectCamera = true;
   yaw = 0;
   pitch = 5;
+  turretYaw = 0;
   xray = true;
   heat = false;
   section: SectionMode = 'shot';
@@ -161,7 +162,19 @@ export class App {
     else if (k === 'w' || k === 's') this.rideShot((k === 'w' ? 1 : -1) * (e.shiftKey ? 0.6 : 0.2));
     else if (k === 'r') this.resetCamera();
     else if (k === 'h') this.toggleHeat();
+    else if (k === 'q' || k === 'e') this.setTurretYaw(this.turretYaw + (k === 'e' ? 5 : -5));
     else if (k === 'm') this.toggleMute();
+  }
+
+  setTurretYaw(deg: number) {
+    this.turretYaw = ((((deg + 180) % 360) + 360) % 360) - 180;
+    setTurretYaw(this.tank, this.turretYaw * DEG);
+    this.updatePreview();
+    const el = this.left.querySelector<HTMLInputElement>('input[data-turret]');
+    if (el) {
+      el.value = String(this.turretYaw);
+      (el.nextElementSibling as HTMLElement).textContent = `${this.turretYaw}°`;
+    }
   }
 
   toggleHeat() {
@@ -312,7 +325,7 @@ export class App {
       this.aimLine.visible = this.aimMarker.visible = false;
     } else {
       const d = v3(a.dir.x, a.dir.y, a.dir.z);
-      this.preview = previewShot(this.vehicle, this.vstate, this.round, this.shotOrigin(a), d, this.distance);
+      this.preview = previewShot(this.vehicle, this.vstate, this.round, this.shotOrigin(a), d, this.distance, this.turretYaw);
       const from = a.point.clone().addScaledVector(a.dir, -6);
       this.aimLine.geometry.setFromPoints([from, a.point]);
       this.aimLine.computeLineDistances();
@@ -402,7 +415,7 @@ export class App {
     if (!a || !this.compareIds.length) return;
     const seed = (Math.random() * 2 ** 31) | 0;
     this.vstate = initialState(this.vehicle);
-    this.shots = compareRounds(this.vehicle, this.compareIds, this.shotOrigin(a), v3(a.dir.x, a.dir.y, a.dir.z), this.distance, seed);
+    this.shots = compareRounds(this.vehicle, this.compareIds, this.shotOrigin(a), v3(a.dir.x, a.dir.y, a.dir.z), this.distance, seed, this.turretYaw);
     this.showShot(0, true);
     this.renderCompare();
   }
@@ -446,7 +459,7 @@ export class App {
     const shot = simulateShot(
       this.vehicle,
       this.round,
-      { vehicleId: this.vehicleId, roundId: this.roundId, distance: this.distance, origin: this.shotOrigin(a), dir, seed: (Math.random() * 2 ** 31) | 0 },
+      { vehicleId: this.vehicleId, roundId: this.roundId, distance: this.distance, origin: this.shotOrigin(a), dir, seed: (Math.random() * 2 ** 31) | 0, turretYaw: this.turretYaw },
       this.vstate,
     );
     this.vstate = shot.stateAfter;
@@ -464,6 +477,7 @@ export class App {
     this.shotView?.dispose();
     this.current = i;
     const shot = this.shots[i];
+    if ((shot.input.turretYaw ?? 0) !== this.turretYaw) this.setTurretYaw(shot.input.turretYaw ?? 0);
     this.shotView = new ShotView(this.tank, shot);
     this.ctx.scene.add(this.shotView.group);
     this.replayT = play ? 0 : shot.duration;
@@ -548,6 +562,9 @@ export class App {
       pitch.addEventListener('input', () => { this.pitch = Number(pitch.value); pv.textContent = `${this.pitch}°`; this.updatePreview(); });
       angleCtl.append(h('label', {}, 'Yaw (0 = frontal)'), h('div', { class: 'row' }, yaw, yv), h('label', {}, 'Pitch (down)'), h('div', { class: 'row' }, pitch, pv));
     }
+    const tur = h('input', { type: 'range', min: -180, max: 180, step: 1, value: this.turretYaw, 'data-turret': true });
+    const turVal = h('span', { class: 'val' }, `${this.turretYaw}°`);
+    tur.addEventListener('input', () => this.setTurretYaw(Number(tur.value)));
     const cam = h('input', { type: 'checkbox' });
     cam.checked = this.respectCamera;
     cam.addEventListener('change', () => {
@@ -604,6 +621,8 @@ export class App {
       ),
       h('label', {}, 'Distance'),
       h('div', { class: 'row' }, dist, distVal),
+      h('label', {}, 'Turret traverse [Q/E]'),
+      h('div', { class: 'row' }, tur, turVal),
       h('div', { class: 'row big' }, h('span', {}, 'Penetration'), penVal),
       h('label', { class: 'check' }, cam, ' Respect camera angle'),
       angleCtl,
