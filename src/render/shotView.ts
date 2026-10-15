@@ -3,7 +3,7 @@ import { checkIncapacitated } from '../sim/state';
 import type { CrewZoneId, ShotResult, TraceKind } from '../sim/types';
 import { roundById } from '../data/rounds';
 import { Burst } from './particles';
-import { ProjectileView } from './projectile';
+import { MUZZLE_DUR, ProjectileView } from './projectile';
 import { boxCenter, moduleColor, type TankView } from './tank';
 
 const TRACE_COLORS: Record<TraceKind, THREE.Color> = {
@@ -51,7 +51,7 @@ export class ShotView {
     this.heads.renderOrder = 11;
     this.heads.frustumCulled = false;
     this.group.add(this.lines, this.heads);
-    this.projectile = new ProjectileView(roundById(shot.input.roundId), shot.traces, shot.impacts, shot.input.seed);
+    this.projectile = new ProjectileView(roundById(shot.input.roundId), shot.traces, shot.impacts, shot.input.seed, shot.input.distance);
     this.group.add(this.projectile.object, ...this.projectile.chunkObjects);
 
     for (const imp of shot.impacts) {
@@ -305,10 +305,13 @@ export class ShotView {
     const col = this.lines.geometry.getAttribute('color') as THREE.BufferAttribute;
     const hpos = this.heads.geometry.getAttribute('position') as THREE.BufferAttribute;
     const hcol = this.heads.geometry.getAttribute('color') as THREE.BufferAttribute;
+    const firstBody = this.shot.traces.findIndex((t) => t.kind === 'shell');
     this.shot.traces.forEach((tr, i) => {
       let k = 0;
       let bright = 0;
-      if (T >= tr.t0) {
+      if (i === firstBody && T < MUZZLE_DUR) {
+        // still at the muzzle
+      } else if (T >= tr.t0) {
         k = tr.t1 > tr.t0 ? Math.min(1, (T - tr.t0) / (tr.t1 - tr.t0)) : 1;
         const age = T - tr.t1;
         bright = age <= 0 ? 1 : Math.max(0.3, 1 - age / FADE);

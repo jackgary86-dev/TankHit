@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { roundById } from '../data/rounds';
-import { shellPoseAt } from './projectile';
+import { muzzleDistance, shellPoseAt } from './projectile';
 import type { ShotResult } from '../sim/types';
 import type { App } from '../app';
 
@@ -48,7 +48,7 @@ export function updateAutoCam(app: App) {
   if (shot && imp && approaching) {
     // Approach: ride close behind and beside the shell so a true-scale projectile fills the frame.
     const round = roundById(shot.input.roundId);
-    const p = shellPoseAt(shot.traces, shot.impacts, app.replayT, round.family);
+    const p = shellPoseAt(shot.traces, shot.impacts, app.replayT, round.family, muzzleDistance(shot.input.distance));
     const size = round.family === 'APFSDS' ? (round.rodLength ?? 0.5) : (round.caliber / 1000) * 3.5;
     const side = new THREE.Vector3().crossVectors(p.dir, new THREE.Vector3(0, 1, 0)).normalize();
     if (app.ctx.camera.position.clone().sub(p.pos).dot(side) < 0) side.negate();
@@ -65,6 +65,13 @@ export function updateAutoCam(app: App) {
       goal.target.copy(ip).add(hp.sub(ip).clampLength(0, 1.0));
     }
   }
+  // Cut (no easing) at the start of the muzzle segment and when it jumps to the approach.
+  const atMuzzle = approaching && app.replayT < 0.22;
+  if (atMuzzle !== app.lastAtMuzzle) {
+    app.ctx.camera.position.copy(pos);
+    app.ctx.controls.target.copy(goal.target);
+  }
+  app.lastAtMuzzle = atMuzzle;
   // Track the shell tightly on the approach; ease back to the wide framing after contact.
   app.ctx.camera.position.lerp(pos, approaching ? 0.25 : 0.1);
   app.ctx.controls.target.lerp(goal.target, approaching ? 0.35 : 0.12);

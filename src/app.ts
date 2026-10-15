@@ -53,6 +53,7 @@ export class App {
   spent!: SpentRounds;
   autoCam = true;
   camGoal: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
+  lastAtMuzzle = false;
   gunnerPickT = 0;
   killWorker: Worker | null = null;
   killOverlay = new KillOverlay();

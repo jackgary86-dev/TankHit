@@ -4,7 +4,15 @@ import { makeRng } from '../sim/vec';
 
 // ------------------------------------------------------------------ pure: where is the shell at time T?
 
-export type ShellPhase = 'flight' | 'inside' | 'ricochet' | 'stopped' | 'gone';
+export type ShellPhase = 'muzzle' | 'flight' | 'inside' | 'ricochet' | 'stopped' | 'gone';
+
+/**
+ * Muzzle segment: the first MUZZLE_DUR seconds of a replay are a cut to the gun, where the sabot actually
+ * separates, before jumping to the approach the sim traced. Purely visual; trace times are unchanged.
+ */
+export const MUZZLE_DUR = 0.22;
+/** How far back from the trace origin the gun is drawn (true range, capped so the cut stays readable). */
+export const muzzleDistance = (range: number) => Math.min(Math.max(range, 8), 25);
 
 export interface ShellPose {
   pos: THREE.Vector3;
@@ -47,7 +55,7 @@ export function easeContact(k: number, endsAtImpact: boolean, startsAtImpact: bo
  * Position and heading of the projectile at replay time T. The shell rides its traces in order; once the last
  * trace ends it stays at the end point (stopped) unless it left the vehicle or was consumed.
  */
-export function shellPoseAt(traces: Trace[], impacts: ImpactEvent[], T: number, family: Round['family']): ShellPose {
+export function shellPoseAt(traces: Trace[], impacts: ImpactEvent[], T: number, family: Round['family'], muzzleDist = 0): ShellPose {
   const body = bodyTraces(traces);
   const first = impacts[0];
   const sinceImpact = first ? T - first.t : -1;
@@ -56,6 +64,14 @@ export function shellPoseAt(traces: Trace[], impacts: ImpactEvent[], T: number, 
     pos: new THREE.Vector3(p.x, p.y, p.z), dir: d, phase, t: T, remaining, sinceImpact, along, traceKind,
   });
   if (!body.length) return pose({ x: 0, y: -10, z: 0 }, new THREE.Vector3(1, 0, 0), 'gone', 1);
+  if (muzzleDist > 0 && T >= 0 && T < MUZZLE_DUR) {
+    // At the gun: the shell covers ~2 m during the cut while the petals peel.
+    const d = dirOf(body[0]);
+    const u = T / MUZZLE_DUR;
+    const gun = new THREE.Vector3(body[0].from.x, body[0].from.y, body[0].from.z).addScaledVector(d, -muzzleDist);
+    const p = gun.addScaledVector(d, u * 2.0);
+    return pose({ x: p.x, y: p.y, z: p.z }, d, 'muzzle', 1, u * 2.0, 'shell');
+  }
   // HEAT: the body collapses against the plate over a few hundredths of a second, then is consumed.
   if (family === 'HEAT' && first && T >= first.t) return pose(first.point, dirOf(body[0]), T - first.t < HEAT_COLLAPSE ? 'stopped' : 'gone', 0);
   for (let i = 0; i < body.length; i++) {
@@ -292,7 +308,7 @@ export class ProjectileView {
   private chunks: { mesh: THREE.Mesh; dir: THREE.Vector3; speed: number; spin: THREE.Vector3 }[] = [];
   private breakAt: { t: number; point: THREE.Vector3 } | null = null;
 
-  constructor(readonly round: Round, readonly traces: Trace[], readonly impacts: ImpactEvent[], seed = 1) {
+  constructor(readonly round: Round, readonly traces: Trace[], readonly impacts: ImpactEvent[], seed = 1, readonly range = 0) {
     this.parts = buildProjectile(round);
     this.buildChunks(seed);
     // Fading ribbon behind the nose: a unit cone along -X, scaled to the recent path each frame.
@@ -354,14 +370,15 @@ export class ProjectileView {
 
   update(T: number) {
     this.updateChunks(T);
-    const p = shellPoseAt(this.traces, this.impacts, T, this.round.family);
+    const p = shellPoseAt(this.traces, this.impacts, T, this.round.family, this.range > 0 ? muzzleDistance(this.range) : 0);
     const g = this.parts.group;
     g.visible = p.phase !== 'gone' && T >= 0;
     if (!g.visible) return;
     g.position.copy(p.pos);
     g.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), p.dir);
     const launchT = bodyTraces(this.traces)[0]?.t0 ?? 0;
-    const sinceLaunch = T - launchT;
+    // With a muzzle cut the petals separate at the gun; otherwise shortly after the trace starts.
+    const sinceLaunch = this.range > 0 ? T + 0.1 : T - launchT;
     const sinceLaunchBody = Math.max(0, sinceLaunch);
     // Trail: up to half a metre of the path just flown, thinner and dimmer as it ages; none while sitting still.
     const trailLen = p.phase === 'stopped' ? 0 : Math.min(0.5, p.along);
@@ -435,7 +452,8 @@ export class ProjectileView {
     for (let i = 0; i < this.parts.petals.length; i++) {
       const petal = this.parts.petals[i];
       const a = sinceLaunch - SABOT_T;
-      petal.visible = a < 1.2;
+      // Petals only exist in the muzzle cut (or, without one, in the first second of flight).
+      petal.visible = a < 1.2 && (this.range <= 0 || p.phase === 'muzzle');
       if (a <= 0) {
         petal.position.set(this.parts.length * 0.05, 0, 0);
         petal.rotation.set((i / 3) * Math.PI * 2, 0, 0);
