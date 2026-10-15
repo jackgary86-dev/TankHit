@@ -6,6 +6,7 @@ import { makeRng, v3 } from '../sim/vec';
 import { evaluateChallenge, saveStars } from '../modes/challenges';
 import { canFire } from '../modes/duel';
 import { afterPlayerShot } from '../ui/duelPanel';
+import { afterDailyShot } from '../ui/dailyPanel';
 import type { App } from '../app';
 
 export function fire(app: App) {
@@ -57,6 +58,7 @@ export function fire(app: App) {
   if (app.challenge) {
     app.challengeResult = evaluateChallenge(app.challenge, app.vehicle, app.vstate, app.shots);
     if (app.challengeResult.status === 'won') saveStars(app.challenge.id, app.challengeResult.stars);
+    if (app.mode === 'daily') afterDailyShot(app);
   }
   app.showShot(app.shots.length - 1, true);
   app.updatePreview();

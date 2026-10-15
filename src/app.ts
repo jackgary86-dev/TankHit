@@ -18,6 +18,8 @@ import type { Round, ShotResult, VehicleState } from './sim/types';
 import type { Challenge, ChallengeResult } from './modes/challenges';
 import type { Duel } from './modes/duel';
 import * as MduelPanel from './ui/duelPanel';
+import * as MdailyPanel from './ui/dailyPanel';
+import type { DailyScenario } from './modes/daily';
 import { h } from './ui/dom';
 import { Tutorial } from './ui/tutorial';
 import * as MkillMapCtl from './ui/killMapCtl';
@@ -33,7 +35,7 @@ import * as Maiming from './game/aiming';
 import * as Mfiring from './game/firing';
 import * as MviewToggles from './ui/viewToggles';
 
-export type Mode = 'sandbox' | 'challenges' | 'compare' | 'duel';
+export type Mode = 'sandbox' | 'challenges' | 'compare' | 'duel' | 'daily';
 
 export interface Aim {
   point: THREE.Vector3;
@@ -63,6 +65,7 @@ export class App {
   /** Threat mode: the kill map is pointed at *my* tank for the chosen enemy round, range and hull angle. */
   threatMode = false;
   duel: Duel | null = null;
+  dailyScenario: DailyScenario | null = null;
   duelShowing: 'enemy' | 'me' = 'enemy';
   duelPanel = h('div', { class: 'panel right duel hidden' });
   private enemyBeforeThreat = '';
@@ -192,6 +195,7 @@ export class App {
   }
 
   showDuelPicker = () => MduelPanel.showDuelPicker(this);
+  showDailyPicker = () => MdailyPanel.showDailyPicker(this);
   renderDuelPanel = () => MduelPanel.renderDuelPanel(this);
 
   resetDamage() {

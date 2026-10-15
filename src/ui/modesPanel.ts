@@ -18,6 +18,7 @@ export function setMode(app: App, m: Mode) {
   app.overlay.classList.add('hidden');
   if (m === 'challenges') app.showChallengePicker();
   if (m === 'duel') app.showDuelPicker();
+  if (m === 'daily') app.showDailyPicker();
   app.resetDamage();
   app.renderTopbar();
   app.renderLeft();
@@ -31,6 +32,7 @@ export function renderTopbar(app: App) {
     tab('challenges', 'Challenges'),
     tab('compare', 'Compare Rounds'),
     tab('duel', 'Duel'),
+    tab('daily', 'Daily'),
     h('button', { class: 'help', title: 'Show the walkthrough', onclick: () => app.tutorial.show() }, '?'),
   );
 }
@@ -89,7 +91,7 @@ export function challengeBox(app: App): HTMLElement | null {
     status,
     h('div', { class: 'buttons' },
       h('button', { onclick: () => app.startChallenge(c) }, 'Retry'),
-      h('button', { onclick: () => app.showChallengePicker() }, 'All challenges'),
+      h('button', { onclick: () => (app.mode === 'daily' ? app.showDailyPicker() : app.showChallengePicker()) }, app.mode === 'daily' ? 'Daily' : 'All challenges'),
     ),
   );
 }
