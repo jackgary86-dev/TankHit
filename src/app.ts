@@ -18,6 +18,8 @@ import type { Round, ShotResult, VehicleState } from './sim/types';
 import { DEG, makeRng, v3, type Vec3 } from './sim/vec';
 import { CHALLENGES, evaluateChallenge, loadStars, saveStars, type Challenge, type ChallengeResult } from './modes/challenges';
 import { compareRounds } from './modes/compare';
+import { isUnlocked, MAX_STARS, nextUnlock, REQUIRES, totalStars } from './modes/progression';
+import { decodeShot, shareUrl } from './modes/share';
 import { fmt, h, select } from './ui/dom';
 
 export type Mode = 'sandbox' | 'challenges' | 'compare';
@@ -106,6 +108,8 @@ export class App {
     this.bindInput();
     this.renderLeft();
     this.renderTopbar();
+    this.loadFromHash();
+    window.addEventListener('hashchange', () => this.loadFromHash());
     requestAnimationFrame(this.frame);
   }
 
@@ -479,6 +483,53 @@ export class App {
     this.renderAimBox();
   }
 
+  // ------------------------------------------------------------ sharing
+
+  /** Reproduce a shot from a share link (#v=…&r=…&o=…&dir=…&s=…). */
+  loadFromHash() {
+    const input = decodeShot(location.hash);
+    if (!input) return;
+    try {
+      vehicleById(input.vehicleId);
+      roundById(input.roundId);
+    } catch {
+      return;
+    }
+    if (this.mode !== 'sandbox') this.setMode('sandbox');
+    if (this.gunner.active) this.toggleGunner();
+    if (input.vehicleId !== this.vehicleId) this.loadVehicle(input.vehicleId);
+    else this.resetDamage();
+    this.roundId = input.roundId;
+    this.distance = input.distance;
+    this.setTurretYaw(input.turretYaw ?? 0);
+    const shot = simulateShot(this.vehicle, this.round, input, this.vstate);
+    this.vstate = shot.stateAfter;
+    this.shots.push(shot);
+    this.showShot(0, true);
+    this.renderLeft();
+    // Frame the impact.
+    const imp = shot.impacts[0];
+    if (imp) {
+      const p = new THREE.Vector3(imp.point.x, imp.point.y, imp.point.z);
+      const d = new THREE.Vector3(input.dir.x, input.dir.y, input.dir.z);
+      this.ctx.controls.target.copy(p);
+      this.ctx.camera.position.copy(p).addScaledVector(d, -5).add(new THREE.Vector3(0, 2.5, 0));
+    }
+  }
+
+  shareCurrent() {
+    const shot = this.shots[this.current];
+    if (!shot) return;
+    const url = shareUrl(shot.input);
+    history.replaceState(null, '', `#${url.split('#')[1]}`);
+    const btn = this.right.querySelector<HTMLButtonElement>('button.share');
+    const done = (ok: boolean) => {
+      if (btn) btn.textContent = ok ? 'Link copied' : 'Link in address bar';
+    };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(() => done(true), () => done(false));
+    else done(false);
+  }
+
   // ------------------------------------------------------------ modes
 
   setMode(m: Mode) {
@@ -503,17 +554,23 @@ export class App {
 
   showChallengePicker() {
     const stars = loadStars();
+    const total = totalStars(stars);
+    const next = nextUnlock(stars);
     this.overlay.classList.remove('hidden');
     this.overlay.replaceChildren(
       h('div', { class: 'picker' },
-        h('h2', {}, 'Challenges'),
-        h('div', { class: 'muted' }, 'Fewer shots earn more stars. Damage carries over between shots.'),
-        ...CHALLENGES.map((c) =>
-          h('button', { class: 'challenge', onclick: () => this.startChallenge(c) },
-            h('div', { class: 'cname' }, c.name, h('span', { class: 'stars' }, starText(stars[c.id] ?? 0))),
-            h('div', { class: 'cbrief' }, c.brief),
+        h('div', { class: 'row' }, h('h2', {}, 'Challenges'), h('span', { class: 'total' }, `★ ${total} / ${MAX_STARS}`)),
+        h('div', { class: 'muted' }, next
+          ? `Fewer shots earn more stars. ${next.needed} more star${next.needed === 1 ? '' : 's'} unlock${next.needed === 1 ? 's' : ''} “${next.challenge.name}”.`
+          : 'Fewer shots earn more stars. Everything is unlocked – well done.'),
+        ...CHALLENGES.map((c) => {
+          const open = isUnlocked(c, stars);
+          return h('button', { class: `challenge ${open ? '' : 'locked'}`, disabled: !open, onclick: () => open && this.startChallenge(c) },
+            h('div', { class: 'cname' }, c.name, open ? h('span', { class: 'stars' }, starText(stars[c.id] ?? 0)) : h('span', { class: 'lock' }, `★ ${REQUIRES[c.id]} to unlock`)),
+            h('div', { class: 'cbrief' }, open ? c.brief : 'Locked.'),
             h('div', { class: 'cmeta' }, `${vehicleById(c.vehicleId).name} · ${c.rounds.map((r) => roundById(r).name).join(' / ')} · ${c.distance} m · ${c.maxShots} shots`),
-          )),
+          );
+        }),
         h('button', { class: 'close', onclick: () => this.setMode('sandbox') }, 'Back to sandbox'),
       ),
     );
@@ -864,7 +921,7 @@ export class App {
         h('span', {}, lvl === 'Incapacitated' ? `${lvl} · ${STATION_LOSS[c.role]}` : lvl));
     });
     this.right.replaceChildren(
-      h('h2', {}, `Shot ${this.current + 1}`),
+      h('div', { class: 'row' }, h('h2', {}, `Shot ${this.current + 1}`), h('button', { class: 'share', onclick: () => this.shareCurrent() }, 'Share link')),
       h('div', { class: `verdict ${sev}` }, s.verdict),
       h('div', { class: 'stats' },
         stat('Round', roundById(shot.input.roundId).name),
