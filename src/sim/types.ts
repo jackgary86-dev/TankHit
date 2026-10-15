@@ -37,6 +37,8 @@ export interface Plate {
   kind: PlateKind;
   /** A point on the inner side of the plate, used to orient the outward normal. */
   inside: Vec3;
+  /** Plates this one sits in front of (mantlet, hatch, MG mount): a ray through this plate skips them. */
+  covers?: string[];
 }
 
 export type ModuleType =

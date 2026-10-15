@@ -69,8 +69,17 @@ export function collectHits(v: Vehicle, s: VehicleState, origin: Vec3, dir: Vec3
     }
   }
   out.sort((a, b) => a.t - b.t);
+  // Mantlets, hatches and MG mounts cover an opening in the plate behind them.
+  const covered = new Set<string>();
+  const coverT: Record<string, number> = {};
+  for (const h of out) {
+    if (h.kind === 'plate' && h.plate.covers) for (const id of h.plate.covers) { covered.add(id); coverT[id] = h.t; }
+  }
+  const uncovered = covered.size
+    ? out.filter((h) => !(h.kind === 'plate' && covered.has(h.plate.id) && h.t >= coverT[h.plate.id] && h.t - coverT[h.plate.id] < 0.6))
+    : out;
   // A ray crossing the seam between two plates touches both at the same distance – charge only one.
-  return out.filter((h, i) => !(h.kind === 'plate' && i > 0 && out[i - 1].kind === 'plate' && h.t - out[i - 1].t < 2e-3));
+  return uncovered.filter((h, i) => !(h.kind === 'plate' && i > 0 && uncovered[i - 1].kind === 'plate' && h.t - uncovered[i - 1].t < 2e-3));
 }
 
 /**

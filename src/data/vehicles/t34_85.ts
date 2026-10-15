@@ -1,6 +1,6 @@
 import type { Vehicle } from '../../sim/types';
 import { v3 } from '../../sim/vec';
-import { ammoRow, box, dummy, frontQuad, hullPlates, mod, rack, turretPlates } from '../builder';
+import { ammoRow, box, dummy, frontQuad, hullPlates, mod, plate, rack, turretPlates } from '../builder';
 
 // Hull spans x -2.95..2.95, top deck at y = 1.35. Turret ring centred at x = 0.6.
 const TX = 0.6;
@@ -24,7 +24,10 @@ export const T34_85: Vehicle = {
       poly: [[1.05, 0.5], [0.4, 0.95], [-1.15, 0.85], [-1.35, 0.4], [-1.35, -0.4], [-1.15, -0.85], [0.4, -0.95], [1.05, -0.5]],
       topScale: 0.86, front: 90, cheek: 75, side: 75, rear: 52, roof: 20, mat: 'cast',
     }),
-    frontQuad('t-mantlet', 'Gun mantlet', 'turret', TX + 1.12, 1.48, 1.92, -0.36, 0.36, 40, 'cast'),
+    { ...frontQuad('t-mantlet', 'Gun mantlet', 'turret', TX + 1.12, 1.48, 1.92, -0.36, 0.36, 90, 'cast'), covers: ['t-7'] },
+    // Historical weak spots on the glacis: the driver's hatch bulge and the bow machine-gun ball mount.
+    { ...plate('h-hatch', "Driver's hatch", 'hull', [v3(2.70, 1.0, 0.28), v3(2.70, 1.0, 0.58), v3(2.45, 1.26, 0.58), v3(2.45, 1.26, 0.28)], 45, v3(2.0, 1.1, 0.43)), covers: ['h-ufp'] },
+    { ...plate('h-mg', 'Bow MG mount', 'hull', [v3(2.75, 0.98, -0.3), v3(2.75, 0.98, -0.56), v3(2.62, 1.2, -0.56), v3(2.62, 1.2, -0.3)], 45, v3(2.0, 1.1, -0.43)), covers: ['h-ufp'] },
   ],
   modules: [
     mod('engine', 'Engine (V-2-34)', 'engine', 'hull', box(v3(-2.55, 0.48, -0.65), v3(-1.2, 1.25, 0.65)), 140, 70),

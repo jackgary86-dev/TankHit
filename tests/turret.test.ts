@@ -63,3 +63,16 @@ describe('turret traverse', () => {
     expect(Math.acos(-dirW.x) / DEG).toBeCloseTo(45);
   });
 });
+
+describe('covering plates', () => {
+  it("a ray through the driver's hatch skips the glacis behind it", () => {
+    const hits = collectHits(t34, initialState(t34), v3(8, 1.3, 0.43), v3(-1, -0.035, 0), { modules: false, crew: false }).filter((h) => h.kind === 'plate');
+    expect(hits[0].kind === 'plate' && hits[0].plate.id).toBe('h-hatch');
+    expect(hits.some((h) => h.kind === 'plate' && h.plate.id === 'h-ufp')).toBe(false);
+  });
+
+  it('a ray beside the hatch still hits the glacis', () => {
+    const hits = collectHits(t34, initialState(t34), v3(8, 1.3, 0.0), v3(-1, -0.035, 0), { modules: false, crew: false }).filter((h) => h.kind === 'plate');
+    expect(hits[0].kind === 'plate' && hits[0].plate.id).toBe('h-ufp');
+  });
+});

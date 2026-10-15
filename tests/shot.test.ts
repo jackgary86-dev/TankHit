@@ -13,7 +13,7 @@ const frontal = (y: number, z = 0) => ({ origin: v3(8, y, z), dir: v3(-1, 0, 0) 
 describe('kinetic shots on T-34-85', () => {
   it('BR-365K penetrates the upper front plate at 100 m', () => {
     const r = roundById('br365k');
-    const { origin, dir } = frontal(1.1, 0.42);
+    const { origin, dir } = frontal(1.1, 0);
     const shot = simulateShot(t34, r, { vehicleId: t34.id, roundId: r.id, distance: 100, origin, dir, seed: 1 }, initialState(t34));
     expect(shot.impacts[0].plateId).toBe('h-ufp');
     expect(shot.summary.penetrated).toBe(true);
@@ -37,7 +37,7 @@ describe('kinetic shots on T-34-85', () => {
 
   it('preview reports LOS and a rating', () => {
     const r = roundById('m829a1');
-    const { origin, dir } = frontal(1.1, 0.42);
+    const { origin, dir } = frontal(1.1, 0);
     const p = previewShot(t34, initialState(t34), r, origin, dir, 1000)!;
     expect(p.plate.id).toBe('h-ufp');
     expect(p.rating).toBe('good');

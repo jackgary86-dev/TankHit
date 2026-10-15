@@ -462,7 +462,13 @@ export class App {
     this.challenge = c;
     this.roundId = c.rounds[0];
     this.distance = c.distance;
+    if (c.fixedAngle) {
+      this.respectCamera = false;
+      this.yaw = c.fixedAngle.yaw;
+      this.pitch = c.fixedAngle.pitch;
+    }
     this.loadVehicle(c.vehicleId);
+    this.setTurretYaw(c.turretYaw ?? 0);
     this.clearAim();
     this.renderLeft();
   }
@@ -630,8 +636,9 @@ export class App {
     });
     const angleCtl = h('div', { class: this.respectCamera ? 'hidden' : 'angles' });
     if (!this.respectCamera) {
-      const yaw = h('input', { type: 'range', min: -180, max: 180, step: 1, value: this.yaw });
-      const pitch = h('input', { type: 'range', min: -20, max: 70, step: 1, value: this.pitch });
+      const locked = !!this.challenge?.fixedAngle;
+      const yaw = h('input', { type: 'range', min: -180, max: 180, step: 1, value: this.yaw, disabled: locked });
+      const pitch = h('input', { type: 'range', min: -20, max: 70, step: 1, value: this.pitch, disabled: locked });
       const yv = h('span', { class: 'val' }, `${this.yaw}°`);
       const pv = h('span', { class: 'val' }, `${this.pitch}°`);
       yaw.addEventListener('input', () => { this.yaw = Number(yaw.value); yv.textContent = `${this.yaw}°`; this.updatePreview(); });
@@ -640,8 +647,9 @@ export class App {
     }
     const tur = h('input', { type: 'range', min: -180, max: 180, step: 1, value: this.turretYaw, 'data-turret': true });
     const turVal = h('span', { class: 'val' }, `${this.turretYaw}°`);
+    tur.disabled = !!this.challenge;
     tur.addEventListener('input', () => this.setTurretYaw(Number(tur.value)));
-    const cam = h('input', { type: 'checkbox' });
+    const cam = h('input', { type: 'checkbox', disabled: !!this.challenge?.fixedAngle });
     cam.checked = this.respectCamera;
     cam.addEventListener('change', () => {
       this.respectCamera = cam.checked;
