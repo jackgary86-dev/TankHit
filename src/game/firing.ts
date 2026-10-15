@@ -4,10 +4,16 @@ import { dispersionMils, estimatedRangeError, gaussian } from '../sim/ballistics
 import { simulateShot } from '../sim/shot';
 import { makeRng, v3 } from '../sim/vec';
 import { evaluateChallenge, saveStars } from '../modes/challenges';
+import { canFire } from '../modes/duel';
+import { afterPlayerShot } from '../ui/duelPanel';
 import type { App } from '../app';
 
 export function fire(app: App) {
   if (app.mode === 'compare') return app.runCompare();
+  if (app.mode === 'duel') {
+    const d = app.duel;
+    if (!d || d.outcome !== 'active' || d.side !== 'player' || app.duelShowing !== 'enemy' || !canFire(d, 'player').ok) return;
+  }
   if (app.challenge && app.challengeResult?.status !== 'active') return;
   const a = app.aim ?? app.hover;
   if (!a) return;
@@ -55,6 +61,7 @@ export function fire(app: App) {
   app.showShot(app.shots.length - 1, true);
   app.updatePreview();
   if (app.challenge) app.renderLeft();
+  if (app.mode === 'duel' && app.duel) afterPlayerShot(app, shot);
 }
 
 export function showShot(app: App, i: number, play: boolean) {

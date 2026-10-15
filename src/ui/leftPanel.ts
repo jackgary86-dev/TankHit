@@ -58,7 +58,7 @@ export function renderLeft(app: App) {
     app.clearAim();
     app.renderLeft();
   });
-  target.disabled = !!app.challenge;
+  target.disabled = !!app.challenge || app.mode === 'duel';
   const compareList = app.mode === 'compare'
     ? h('div', { class: 'cmplist' },
         h('label', {}, `Rounds to compare (${app.compareIds.length}/4)`),
@@ -75,7 +75,7 @@ export function renderLeft(app: App) {
     : null;
 
   app.left.replaceChildren(
-    h('h2', {}, app.mode === 'compare' ? 'Compare Rounds' : app.challenge ? 'Challenge' : 'Protection Analysis'),
+    h('h2', {}, app.mode === 'compare' ? 'Compare Rounds' : app.mode === 'duel' ? (app.duelShowing === 'enemy' ? 'Your shot' : 'Incoming') : app.challenge ? 'Challenge' : 'Protection Analysis'),
     app.challengeBox() ?? '',
     label(app.threatMode ? 'Your tank (under fire)' : 'Target'),
     target,

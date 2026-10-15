@@ -17,6 +17,8 @@ export function renderRight(app: App) {
     return;
   }
   app.right.classList.remove('hidden');
+  // In a duel the duel panel carries the story; keep the shot details folded unless opened.
+  app.right.classList.toggle('collapsed', app.mode === 'duel' && !app.right.dataset.opened);
   const s = shot.summary;
   const v = app.vehicle;
   const sev = verdictClass(s.verdict);

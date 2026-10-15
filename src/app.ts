@@ -16,6 +16,8 @@ import type { Preview } from './sim/shot';
 import { initialState } from './sim/state';
 import type { Round, ShotResult, VehicleState } from './sim/types';
 import type { Challenge, ChallengeResult } from './modes/challenges';
+import type { Duel } from './modes/duel';
+import * as MduelPanel from './ui/duelPanel';
 import { h } from './ui/dom';
 import { Tutorial } from './ui/tutorial';
 import * as MkillMapCtl from './ui/killMapCtl';
@@ -31,7 +33,7 @@ import * as Maiming from './game/aiming';
 import * as Mfiring from './game/firing';
 import * as MviewToggles from './ui/viewToggles';
 
-export type Mode = 'sandbox' | 'challenges' | 'compare';
+export type Mode = 'sandbox' | 'challenges' | 'compare' | 'duel';
 
 export interface Aim {
   point: THREE.Vector3;
@@ -60,6 +62,9 @@ export class App {
   myVehicleId = (() => { try { return localStorage.getItem('tankhit.myVehicle') ?? 't34-85'; } catch { return 't34-85'; } })();
   /** Threat mode: the kill map is pointed at *my* tank for the chosen enemy round, range and hull angle. */
   threatMode = false;
+  duel: Duel | null = null;
+  duelShowing: 'enemy' | 'me' = 'enemy';
+  duelPanel = h('div', { class: 'panel right duel hidden' });
   private enemyBeforeThreat = '';
   camGoal: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
   lastAtMuzzle = false;
@@ -113,11 +118,14 @@ export class App {
   constructor(container: HTMLElement) {
     this.ctx = createScene(container);
     ({ line: this.aimLine, marker: this.aimMarker } = Maiming.createAimGizmo(this.ctx.scene));
-    this.ui.append(this.gunner.overlay, this.topbar, this.left, this.right, this.comparePanel, this.log, this.timeline, this.legend, this.killLegend, this.killStatus, this.overlay, this.tutorial.el);
+    this.ui.append(this.gunner.overlay, this.topbar, this.left, this.right, this.comparePanel, this.duelPanel, this.log, this.timeline, this.legend, this.killLegend, this.killStatus, this.overlay, this.tutorial.el);
     // Panels collapse when their heading is clicked (essential on phones).
     for (const panel of [this.left, this.right, this.comparePanel]) {
       panel.addEventListener('click', (e) => {
-        if ((e.target as HTMLElement).tagName === 'H2') panel.classList.toggle('collapsed');
+        if ((e.target as HTMLElement).tagName === 'H2') {
+          panel.classList.toggle('collapsed');
+          panel.dataset.opened = panel.classList.contains('collapsed') ? '' : '1';
+        }
       });
     }
     this.buildLegend();
@@ -166,6 +174,25 @@ export class App {
     setXray(this.tank, this.xray, this.heat);
     this.resetDamage();
   }
+
+  /** Show a vehicle with an existing damage state and shot history (duels swap sides without resetting). */
+  loadVehicleWithState(id: string, state: VehicleState, shots: ShotResult[]) {
+    this.loadVehicle(id);
+    this.vstate = state;
+    this.shots = shots;
+    this.current = -1;
+    for (let i = 0; i < shots.length; i++) {
+      this.decals.addFromShot(shots[i]);
+      this.spent.addFromShot(shots[i], i);
+    }
+    applyDamage(this.tank, shots.length ? shots[shots.length - 1] : null, 1e9);
+    this.renderRight();
+    this.renderTimeline();
+    this.renderLog();
+  }
+
+  showDuelPicker = () => MduelPanel.showDuelPicker(this);
+  renderDuelPanel = () => MduelPanel.renderDuelPanel(this);
 
   resetDamage() {
     this.vstate = initialState(this.vehicle);

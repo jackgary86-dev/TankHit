@@ -13,8 +13,11 @@ import type { App, Mode } from '../app';
 export function setMode(app: App, m: Mode) {
   app.mode = m;
   app.challenge = null;
+  app.duel = null;
+  app.renderDuelPanel();
   app.overlay.classList.add('hidden');
   if (m === 'challenges') app.showChallengePicker();
+  if (m === 'duel') app.showDuelPicker();
   app.resetDamage();
   app.renderTopbar();
   app.renderLeft();
@@ -27,6 +30,7 @@ export function renderTopbar(app: App) {
     tab('sandbox', 'Sandbox'),
     tab('challenges', 'Challenges'),
     tab('compare', 'Compare Rounds'),
+    tab('duel', 'Duel'),
     h('button', { class: 'help', title: 'Show the walkthrough', onclick: () => app.tutorial.show() }, '?'),
   );
 }

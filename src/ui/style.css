@@ -242,3 +242,20 @@ button.share { width: auto; font-size: 11px; padding: 3px 8px; }
 .threat { margin-top: 6px; padding: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; }
 .threat label { margin-top: 0; }
 .threat button { margin-top: 6px; }
+
+.panel.duel { width: 300px; }
+.duelside { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.duelcrew { display: flex; gap: 3px; }
+.crewchip { display: inline-block; width: 18px; height: 18px; border-radius: 3px; font-size: 10px; line-height: 18px; text-align: center; background: var(--panel-2); color: var(--good); border: 1px solid var(--line); }
+.crewchip.lightly { color: var(--warn); }
+.crewchip.severely { color: #ff8c1a; }
+.crewchip.incapacitated { color: var(--bad); background: rgba(255,75,62,0.15); }
+.duellog { font-size: 11px; max-height: 140px; overflow-y: auto; }
+.duellog .player { color: var(--text); }
+.duellog .enemy { color: #ff9a7a; }
+.panel.duel button.primary { width: 100%; margin-top: 6px; background: #8a2a1c; border-color: #c4452e; font-weight: 600; }
+.panel.right.duel { top: 60px; }
+.panel.right:not(.duel):not(.hidden) ~ .panel.duel { top: auto; bottom: 12px; max-height: 45vh; }
+
+.picker label { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; }
+.picker select { width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 7px 8px; font: inherit; }
