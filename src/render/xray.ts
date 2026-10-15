@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { plateEquivalent } from '../sim/penetration';
+import { armourMaterial, xrayMaterial } from './armour';
 import type { TankView } from './tank';
 
 /** Blue (thin) -> cyan -> green -> yellow -> red (thick), by KE RHA-equivalent at 0 degrees. */
@@ -18,16 +19,15 @@ export const HEAT_STOPS = [0, 40, 100, 200, 350, 500];
 
 export type SectionMode = 'off' | 'shot' | 'camera';
 
-const XRAY_PLATE = (era: boolean) =>
-  new THREE.MeshStandardMaterial({
-    color: era ? 0xa8c880 : 0x9cc3d8,
-    roughness: 0.4,
-    metalness: 0.1,
-    transparent: true,
-    opacity: 0.13,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-  });
+const XRAY_PLATE = (era: boolean) => xrayMaterial(era ? 0xa8c880 : 0x9cc3d8);
+/** Inner layers in X-ray: nearly solid so the stack reads as bands on a cut face. */
+const XRAY_LAYER = (color: number) =>
+  new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.2, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide });
+
+/** Inner composite slabs only show where they can be seen into: X-ray, or a section cut through the paint. */
+function layersVisible(view: TankView) {
+  return (view.xray || view.sectioned) && !view.heat;
+}
 
 const XRAY_GEAR = () =>
   new THREE.MeshStandardMaterial({ color: 0x1c2026, transparent: true, opacity: 0.35, depthWrite: false, roughness: 0.9 });
@@ -44,19 +44,32 @@ export function setXray(view: TankView, on: boolean, heat = false) {
     m.userData.solid ??= m.material as THREE.Material;
     m.userData.xray ??= XRAY_PLATE(plate.kind === 'era');
     if (!m.userData.heat) {
-      const hm = new THREE.MeshStandardMaterial({ color: heatColor(plateEquivalent(plate, true)), roughness: 0.6, metalness: 0.05, side: THREE.DoubleSide });
+      // The heatmap tints the same steel rather than swapping to a flat material.
+      const hm = armourMaterial(plate, heatColor(plateEquivalent(plate, true)).getHex());
       m.userData.heat = hm;
     }
     const hm = m.userData.heat as THREE.MeshStandardMaterial;
     hm.transparent = on;
-    hm.opacity = on ? 0.42 : 1;
+    hm.opacity = on ? 0.5 : 1;
     hm.depthWrite = !on;
     hm.needsUpdate = true;
     m.material = heat ? hm : on ? m.userData.xray : m.userData.solid;
     m.castShadow = !on;
+    view.xray = on;
+    view.heat = heat;
+    for (const lm of view.layerMeshes.get(id) ?? []) {
+      const l = lm as Swappable;
+      l.userData.solid ??= l.material as THREE.Material;
+      l.userData.xray ??= XRAY_LAYER((l.userData.solid as THREE.MeshStandardMaterial).color.getHex());
+      l.material = on ? l.userData.xray : l.userData.solid;
+      l.visible = layersVisible(view);
+    }
     const edge = view.plateEdges.get(id)!;
     edge.userData.xray = on;
-    edge.visible = on && mesh.visible;
+    const em = edge.material as THREE.LineBasicMaterial;
+    em.color.setHex(on ? 0xd8f0ff : 0x15171a);
+    em.opacity = on ? 0.55 : 0.45;
+    edge.visible = mesh.visible;
   }
   for (const o of view.exterior) {
     const m = o as Swappable;
@@ -70,6 +83,11 @@ export function setXray(view: TankView, on: boolean, heat = false) {
 /** Apply a clipping plane to the shell (plates, edges and running gear) – interior stays whole. */
 export function setSectionPlane(view: TankView, plane: THREE.Plane | null) {
   const planes = plane ? [plane] : [];
+  const sectioned = !!plane;
+  if (sectioned !== view.sectioned) {
+    view.sectioned = sectioned;
+    for (const [id] of view.plateMeshes) for (const lm of view.layerMeshes.get(id) ?? []) lm.visible = layersVisible(view);
+  }
   const apply = (mat: THREE.Material | undefined) => {
     if (!mat) return;
     mat.clippingPlanes = planes;
@@ -83,6 +101,12 @@ export function setSectionPlane(view: TankView, plane: THREE.Plane | null) {
     apply(m.userData.heat as THREE.Material | undefined);
     apply(m.material as THREE.Material);
     apply(view.plateEdges.get(id)!.material as THREE.Material);
+    for (const lm of view.layerMeshes.get(id) ?? []) {
+      const l = lm as Swappable;
+      apply(l.userData.xray);
+      apply(l.userData.solid);
+      apply(l.material as THREE.Material);
+    }
   }
   for (const o of view.exterior) {
     const m = o as Swappable;

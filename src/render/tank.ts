@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { plateNormal } from '../data/builder';
+import { armourMaterial, layerMaterial } from './armour';
 import type { Box, Crew, Module, Plate, Vehicle } from '../sim/types';
 
 export const AMMO_COLORS: Record<string, number> = {
@@ -35,6 +36,12 @@ export interface TankView {
   turretYaw: number;
   plateMeshes: Map<string, THREE.Mesh>;
   plateEdges: Map<string, THREE.LineSegments>;
+  /** Inner composite layer slabs (outer layer is the plate mesh itself). */
+  layerMeshes: Map<string, THREE.Mesh[]>;
+  /** Current view state, kept so layer visibility can be recomputed. */
+  xray: boolean;
+  heat: boolean;
+  sectioned: boolean;
   moduleMeshes: Map<string, THREE.Mesh>;
   crewGroups: Map<string, THREE.Group>;
   /** Meshes of each crew zone, keyed `${crewId}:${zone}` (several boxes may share a key). */
@@ -51,11 +58,13 @@ export function boxSize(b: Box): THREE.Vector3 {
 }
 
 /** Extrude the plate polygon inward by its physical thickness. */
-export function plateGeometry(p: Plate): THREE.BufferGeometry {
+export function plateGeometry(p: Plate, fromMm = 0, toMm = p.mm): THREE.BufferGeometry {
   const n = plateNormal(p);
-  const t = Math.max(p.mm / 1000, 0.008);
-  const outer = p.pts.map((q) => new THREE.Vector3(q.x, q.y, q.z));
-  const inner = outer.map((q) => q.clone().addScaledVector(new THREE.Vector3(n.x, n.y, n.z), -t));
+  const d0 = fromMm / 1000;
+  const d1 = Math.max(toMm / 1000, d0 + 0.008);
+  const nv = new THREE.Vector3(n.x, n.y, n.z);
+  const outer = p.pts.map((q) => new THREE.Vector3(q.x, q.y, q.z).addScaledVector(nv, -d0));
+  const inner = p.pts.map((q) => new THREE.Vector3(q.x, q.y, q.z).addScaledVector(nv, -d1));
   const pos: number[] = [];
   const tri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => pos.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
   const k = outer.length;
@@ -156,25 +165,40 @@ export function buildTank(v: Vehicle): TankView {
   root.add(hull, turret);
   const view: TankView = {
     vehicle: v, root, hull, turret, pivot, turretYaw: 0,
-    plateMeshes: new Map(), plateEdges: new Map(), moduleMeshes: new Map(), crewGroups: new Map(), zoneMeshes: new Map(),
+    plateMeshes: new Map(), plateEdges: new Map(), layerMeshes: new Map(), xray: false, heat: false, sectioned: false, moduleMeshes: new Map(), crewGroups: new Map(), zoneMeshes: new Map(),
     exterior: [], interior: [],
   };
   const groupOf = (g: 'hull' | 'turret') => (g === 'hull' ? hull : turretInner);
 
   for (const p of v.plates) {
-    const geo = plateGeometry(p);
-    const mat = new THREE.MeshStandardMaterial({ color: p.kind === 'era' ? 0x5d6a48 : v.visual.color, roughness: 0.75, metalness: 0.25 });
-    const mesh = new THREE.Mesh(geo, mat);
+    // Composite plates are built as one slab per layer so a section cut shows the stack as coloured bands;
+    // the outer layer carries the paint and is the pickable plate mesh.
+    const layers = p.layers && p.layers.length > 1 ? p.layers : [{ mat: p.mat, mm: p.mm }];
+    const geo = plateGeometry(p, 0, layers[0].mm);
+    const mesh = new THREE.Mesh(geo, armourMaterial(p, v.visual.color));
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.userData = { kind: 'plate', id: p.id };
     groupOf(p.group).add(mesh);
     view.plateMeshes.set(p.id, mesh);
+    const inner: THREE.Mesh[] = [];
+    let depth = layers[0].mm;
+    for (let i = 1; i < layers.length; i++) {
+      const l = layers[i];
+      const lm = new THREE.Mesh(plateGeometry(p, depth, depth + l.mm), layerMaterial(l.mat));
+      lm.userData = { kind: 'layer', id: p.id, mat: l.mat };
+      lm.receiveShadow = true;
+      lm.visible = false;
+      groupOf(p.group).add(lm);
+      inner.push(lm);
+      depth += l.mm;
+    }
+    view.layerMeshes.set(p.id, inner);
+    // Plate edges double as weld seams in the painted view and glowing outlines in X-ray.
     const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(geo, 25),
-      new THREE.LineBasicMaterial({ color: 0xd8f0ff, transparent: true, opacity: 0.55 }),
+      new THREE.EdgesGeometry(plateGeometry(p), 25),
+      new THREE.LineBasicMaterial({ color: 0x15171a, transparent: true, opacity: 0.45 }),
     );
-    edges.visible = false;
     edges.userData = { kind: 'edge' };
     groupOf(p.group).add(edges);
     view.plateEdges.set(p.id, edges);

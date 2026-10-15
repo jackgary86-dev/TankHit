@@ -1,6 +1,7 @@
 import { FAMILIES, ROUNDS } from '../data/rounds';
 import { VEHICLES } from '../data/vehicles';
 import { muted } from '../render/audio';
+import { describeLayers } from '../render/armour';
 import { isReadableSize } from '../render/projectile';
 import { killProbability } from '../sim/killmap';
 import { penetrationAt } from '../sim/penetration';
@@ -148,6 +149,9 @@ export function renderAimBox(app: App) {
       stat('LOS (equiv.)', `${fmt(p.losMm)} mm`),
       stat('Your pen', `${fmt(p.penMm)} mm`),
     ),
+    p.plate.layers && p.plate.layers.length > 1
+      ? h('div', { class: 'layers' }, ...describeLayers(p.plate).map((l) => h('span', { class: 'layer' }, `${l.name} ${l.mm} mm`)))
+      : '',
     chip,
   );
 }

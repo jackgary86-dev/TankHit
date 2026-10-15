@@ -454,6 +454,10 @@ export function applyDamage(view: TankView, shot: ShotResult | null, T: number) 
     }
     const visible = !spentBefore && !(firedAt !== undefined && fly >= 1);
     mesh.visible = visible;
+    const edge = view.plateEdges.get(p.id)!;
+    edge.visible = visible;
+    edge.position.copy(mesh.position);
+    edge.rotation.copy(mesh.rotation);
     view.plateEdges.get(p.id)!.visible = visible && !!view.plateEdges.get(p.id)!.userData.xray;
   }
   applyCrew(view, shot, T);

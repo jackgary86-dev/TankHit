@@ -188,6 +188,7 @@ export class App {
       this.syncTimeline();
     }
     this.shotView?.update(this.replayT);
+    this.decals?.update(this.current, this.replayT);
     McameraRig.impactShake(this);
     this.updateSection();
     this.pollKillMap();

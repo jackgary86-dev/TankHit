@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { roundById } from '../data/rounds';
 import type { ImpactEvent, ShotResult } from '../sim/types';
 import type { TankView } from './tank';
 
@@ -27,11 +28,70 @@ const scorch = () => (scorchTex ??= radial([[0, 'rgba(30,24,18,0.75)'], [0.5, 'r
  */
 export class DamageDecals {
   private meshes: THREE.Mesh[] = [];
+  /** Penetration tunnels and craters: real geometry through the plate, with molten edges that cool. */
+  private holes: { mesh: THREE.Mesh; shot: number; t: number }[] = [];
+  private shots = 0;
 
   constructor(private view: TankView) {}
 
   addFromShot(shot: ShotResult) {
-    for (const imp of shot.impacts) this.add(imp, shot);
+    const index = this.shots++;
+    for (const imp of shot.impacts) {
+      this.add(imp, shot);
+      if (imp.kind === 'pen' || imp.kind === 'nonpen' || imp.kind === 'shatter') this.addHole(imp, shot, index);
+    }
+  }
+
+  /** Tunnel through the plate thickness (pen) or a crater dimple (stopped shot), parented to hull/turret. */
+  private addHole(imp: ImpactEvent, shot: ShotResult, index: number) {
+    const plate = this.view.vehicle.plates.find((p) => p.id === imp.plateId);
+    if (!plate || plate.kind === 'era') return;
+    const round = roundById(shot.input.roundId);
+    const r = Math.max(0.012, (round.family === 'APFSDS' ? (round.rodDiameter ?? 25) * 1.4 : round.caliber * 0.55) / 1000);
+    const n = new THREE.Vector3(imp.normal.x, imp.normal.y, imp.normal.z).normalize();
+    const d = new THREE.Vector3(shot.input.dir.x, shot.input.dir.y, shot.input.dir.z).normalize();
+    const group = plate.group === 'turret' ? this.view.turret : this.view.hull;
+    const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+    const p = new THREE.Vector3(imp.point.x, imp.point.y, imp.point.z);
+    let mesh: THREE.Mesh;
+    if (imp.kind === 'pen') {
+      const cos = Math.max(0.2, Math.abs(d.dot(n)));
+      const len = (plate.mm / 1000) / cos + 0.01;
+      const geo = new THREE.CylinderGeometry(r, r * 0.92, len, 18, 1, true);
+      geo.rotateX(Math.PI / 2); // along +Z
+      geo.translate(0, 0, len / 2 - 0.005);
+      mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x2a2c30, roughness: 0.5, metalness: 0.8, side: THREE.DoubleSide, emissive: 0x000000 }));
+      mesh.position.copy(group.worldToLocal(p.clone()));
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), d.clone().transformDirection(inv));
+      // Petal lip around the entry.
+      const lip = new THREE.Mesh(new THREE.TorusGeometry(r * 1.05, r * 0.35, 8, 18), new THREE.MeshStandardMaterial({ color: 0x3b3e44, roughness: 0.6, metalness: 0.7, emissive: 0x000000 }));
+      lip.position.z = 0.002;
+      mesh.add(lip);
+    } else {
+      const geo = new THREE.SphereGeometry(r * 1.6, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+      mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x33363b, roughness: 0.75, metalness: 0.6, side: THREE.BackSide, emissive: 0x000000 }));
+      mesh.position.copy(group.worldToLocal(p.clone().addScaledVector(n, 0.004)));
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n.clone().transformDirection(inv).negate());
+      mesh.scale.set(1, 0.45, 1);
+    }
+    mesh.userData = { kind: 'hole' };
+    group.add(mesh);
+    this.holes.push({ mesh, shot: index, t: imp.t });
+  }
+
+  /** Molten edges glow for the shot being replayed and cool over ~2.5 s of replay time; older holes are cold. */
+  update(currentShot: number, replayT: number) {
+    for (const h of this.holes) {
+      const age = h.shot === currentShot ? replayT - h.t : Infinity;
+      const heat = age < 0 ? 0 : Math.max(0, 1 - age / 2.5);
+      const set = (m: THREE.Mesh) => {
+        const mat = m.material as THREE.MeshStandardMaterial;
+        mat.emissive.setRGB(1.3 * heat, 0.45 * heat, 0.06 * heat);
+      };
+      h.mesh.visible = h.shot !== currentShot || age >= 0;
+      set(h.mesh);
+      for (const c of h.mesh.children) set(c as THREE.Mesh);
+    }
   }
 
   private add(imp: ImpactEvent, shot: ShotResult) {
@@ -81,6 +141,16 @@ export class DamageDecals {
       (m.material as THREE.Material).dispose();
     }
     this.meshes = [];
+    for (const h of this.holes) {
+      h.mesh.removeFromParent();
+      h.mesh.traverse((o) => {
+        const m = o as THREE.Mesh;
+        m.geometry?.dispose?.();
+        (m.material as THREE.Material | undefined)?.dispose?.();
+      });
+    }
+    this.holes = [];
+    this.shots = 0;
   }
 
   get count() {

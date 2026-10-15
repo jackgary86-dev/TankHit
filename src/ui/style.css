@@ -211,3 +211,6 @@ button.share { width: auto; font-size: 11px; padding: 3px 8px; }
   .picker { padding: 12px; }
   .hint { display: none; }
 }
+
+.layers { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.layer { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
