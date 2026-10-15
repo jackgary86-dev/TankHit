@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { roundById } from '../src/data/rounds';
 import { vehicleById } from '../src/data/vehicles';
-import { buildProjectile, HEAT_COLLAPSE, shellPoseAt, visualScale } from '../src/render/projectile';
+import { buildProjectile, HEAT_COLLAPSE, setReadableSize, shellPoseAt, visualScale } from '../src/render/projectile';
 import { simulateShot } from '../src/sim/shot';
 import { initialState } from '../src/sim/state';
 import { v3 } from '../src/sim/vec';
@@ -68,6 +68,11 @@ describe('projectile meshes', () => {
       expect(p.petals.length).toBe(r.family === 'APFSDS' ? 3 : 0);
       expect(!!p.cap).toBe(!!r.capped);
     }
+    // True scale by default; the readable-size option inflates small calibres only, never rod length.
+    expect(visualScale(roundById('m72'))).toBe(1);
+    setReadableSize(true);
     expect(visualScale(roundById('m72'))).toBeGreaterThan(visualScale(roundById('m829a1')));
+    expect(buildProjectile(roundById('m829a1')).length).toBeCloseTo(roundById('m829a1').rodLength!, 3);
+    setReadableSize(false);
   });
 });

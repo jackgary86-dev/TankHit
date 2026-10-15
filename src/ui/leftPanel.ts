@@ -1,6 +1,7 @@
 import { FAMILIES, ROUNDS } from '../data/rounds';
 import { VEHICLES } from '../data/vehicles';
 import { muted } from '../render/audio';
+import { isReadableSize } from '../render/projectile';
 import { killProbability } from '../sim/killmap';
 import { penetrationAt } from '../sim/penetration';
 import { v3 } from '../sim/vec';
@@ -117,6 +118,7 @@ export function renderLeft(app: App) {
       h('button', { class: app.killMap ? 'on' : '', onclick: () => app.toggleKillMap() }, 'Kill map [K]'),
       h('button', { class: app.gunner.active ? 'on' : '', onclick: () => app.toggleGunner() }, "Gunner's sight [G]"),
       h('button', { class: app.autoCam ? 'on' : '', onclick: () => app.toggleAutoCam() }, 'Auto camera [V]'),
+      h('button', { class: isReadableSize() ? 'on' : '', title: 'Inflate small shells for readability instead of true scale', onclick: () => app.toggleReadableSize() }, 'Readable shells'),
       h('button', { class: muted ? '' : 'on', onclick: () => app.toggleMute() }, muted ? 'Sound off [M]' : 'Sound on [M]'),
     ),
     h('div', { class: 'hint' }, 'Drag to orbit · click armor to lock aim · Space to fire'),

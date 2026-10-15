@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { roundById } from '../data/rounds';
+import { shellPoseAt } from './projectile';
 import type { ShotResult } from '../sim/types';
 import type { App } from '../app';
 
@@ -40,19 +42,32 @@ export function updateAutoCam(app: App) {
   if (!app.autoCam || !app.camGoal || app.gunner.active) return;
   const shot = app.shots[app.current];
   const goal = app.camGoal;
-  if (shot && app.playing) {
+  const imp = shot?.impacts[0];
+  const approaching = !!shot && !!imp && app.playing && app.replayT < imp.t - 0.04;
+  let pos = goal.pos;
+  if (shot && imp && approaching) {
+    // Approach: ride close behind and beside the shell so a true-scale projectile fills the frame.
+    const round = roundById(shot.input.roundId);
+    const p = shellPoseAt(shot.traces, shot.impacts, app.replayT, round.family);
+    const size = round.family === 'APFSDS' ? (round.rodLength ?? 0.5) : (round.caliber / 1000) * 3.5;
+    const side = new THREE.Vector3().crossVectors(p.dir, new THREE.Vector3(0, 1, 0)).normalize();
+    if (app.ctx.camera.position.clone().sub(p.pos).dot(side) < 0) side.negate();
+    const back = Math.max(0.6, size * 2.2);
+    pos = p.pos.clone().addScaledVector(p.dir, -back * 0.55).addScaledVector(side, back * 0.75).add(new THREE.Vector3(0, back * 0.45, 0));
+    goal.target.copy(p.pos).addScaledVector(p.dir, size * 0.3);
+  } else if (shot && imp && app.playing) {
+    // After contact: settle on the impact framing and follow the penetrator within a metre of the strike.
     const head = shot.traces.find((t) => (t.kind === 'shell' || t.kind === 'jet') && app.replayT >= t.t0 && app.replayT <= t.t1);
-    const imp = shot.impacts[0];
-    if (head && imp) {
+    if (head) {
       const k = (app.replayT - head.t0) / Math.max(head.t1 - head.t0, 1e-6);
       const hp = new THREE.Vector3(head.from.x + (head.to.x - head.from.x) * k, head.from.y + (head.to.y - head.from.y) * k, head.from.z + (head.to.z - head.from.z) * k);
-      // Keep the impact in frame: follow the head only within a metre of where it strikes.
       const ip = new THREE.Vector3(imp.point.x, imp.point.y, imp.point.z);
       goal.target.copy(ip).add(hp.sub(ip).clampLength(0, 1.0));
     }
   }
-  app.ctx.camera.position.lerp(goal.pos, 0.08);
-  app.ctx.controls.target.lerp(goal.target, 0.12);
+  // Track the shell tightly on the approach; ease back to the wide framing after contact.
+  app.ctx.camera.position.lerp(pos, approaching ? 0.25 : 0.1);
+  app.ctx.controls.target.lerp(goal.target, approaching ? 0.35 : 0.12);
   if (app.ctx.camera.position.distanceTo(goal.pos) < 0.02 && !app.playing) app.camGoal = null;
 }
 

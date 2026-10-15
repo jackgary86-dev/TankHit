@@ -103,8 +103,14 @@ const BRASS = () => new THREE.MeshStandardMaterial({ color: 0xb08d57, roughness:
 const DARK = () => new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.6, metalness: 0.7 });
 const TUNGSTEN = () => new THREE.MeshStandardMaterial({ color: 0x6f737a, roughness: 0.3, metalness: 1.0, emissive: 0x000000 });
 
-/** Visual scale: shells are tiny next to a tank; small calibres are shown a little larger so they read at replay zoom. */
+/** Off by default: projectiles are true to calibre and rod length and the auto camera does the work. */
+let readableSize = false;
+export const setReadableSize = (on: boolean) => (readableSize = on);
+export const isReadableSize = () => readableSize;
+
+/** Visual scale: 1 (true scale) unless the readable-size option is on, which inflates small calibres only. */
 export function visualScale(r: Round): number {
+  if (!readableSize) return 1;
   return r.caliber < 90 ? 1.6 : r.caliber < 110 ? 1.35 : 1.2;
 }
 
@@ -144,7 +150,7 @@ export function buildProjectile(r: Round): ProjectileParts {
   const cal = (r.caliber / 1000) * s;
 
   if (r.family === 'APFSDS') {
-    const L = (r.rodLength ?? 0.5) * s;
+    const L = r.rodLength ?? 0.5; // rod length is never inflated: it is the one dimension people know
     const D = ((r.rodDiameter ?? 25) / 1000) * s;
     length = L;
     const rodGeo = new THREE.CylinderGeometry(D / 2, D / 2, L * 0.85, 12);

@@ -6,6 +6,7 @@ import { GunnerView } from './render/gunner';
 import { KillOverlay } from './render/killOverlay';
 import { createScene, type SceneCtx } from './render/scene';
 import { ShotView, applyDamage } from './render/shotView';
+import { isReadableSize, setReadableSize } from './render/projectile';
 import { buildTank, disposeTank, type TankView } from './render/tank';
 import { setXray, type SectionMode } from './render/xray';
 import type { KillMapMessage } from './sim/killmap.worker';
@@ -187,6 +188,13 @@ export class App {
     this.ctx.composer.render();
     requestAnimationFrame(this.frame);
   };
+  /** Inflate small-calibre shells for readability (off: true scale, the auto camera zooms instead). */
+  toggleReadableSize() {
+    setReadableSize(!isReadableSize());
+    if (this.current >= 0) this.showShot(this.current, false);
+    this.renderLeft();
+  }
+
   // ------------------------------------------------------------ delegated to modules
   toggleKillMap = () => MkillMapCtl.toggleKillMap(this);
   pollKillMap = () => MkillMapCtl.pollKillMap(this);
