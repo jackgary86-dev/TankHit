@@ -23,7 +23,7 @@ export interface Challenge {
 
 // ---------------------------------------------------------------- objective helpers
 
-export const knockedOut = (v: Vehicle, s: VehicleState) => s.destroyed || aliveCrew(v, s).length < 2;
+export const knockedOut = (v: Vehicle, s: VehicleState) => s.destroyed || !!s.abandoned || aliveCrew(v, s).length < 2;
 export const incapacitated = (v: Vehicle, s: VehicleState) => v.crew.filter((c) => s.crew[c.id].incapacitated).length;
 export const disabledOrWorse = (v: Vehicle, s: VehicleState, shots: ShotResult[]) =>
   knockedOut(v, s) || shots.some((x) => x.summary.verdict === 'Disabled');

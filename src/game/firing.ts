@@ -27,7 +27,7 @@ export function fire(app: App) {
   if (scatter) {
     // Seeded dispersion: scatter the arrival point in the plane normal to the line of fire.
     const rng = makeRng(seed ^ 0x5bd1e995);
-    const sigma = dispersionMils(app.round) / 1000;
+    const sigma = (dispersionMils(app.round) / 1000) * (app.mode === 'duel' && app.duel?.myState.gunnerReplaced ? 1.6 : 1);
     const mx = gaussian(rng(), rng()) * sigma;
     const my = gaussian(rng(), rng()) * sigma;
     const right = new THREE.Vector3().crossVectors(a.dir, new THREE.Vector3(0, 1, 0)).normalize();

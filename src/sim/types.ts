@@ -183,6 +183,10 @@ export interface VehicleState {
   eraSpent: Record<string, boolean>;
   destroyed: boolean;
   onFire: boolean;
+  /** Surviving crew have abandoned the vehicle (fire, cook-off). */
+  abandoned?: boolean;
+  /** The commander has taken over the gun after the gunner was lost. */
+  gunnerReplaced?: boolean;
 }
 
 // ---------------------------------------------------------------- shot results
@@ -238,7 +242,7 @@ export interface AmmoEvent {
   kind: AmmoEventKind;
 }
 
-export type BigEventKind = 'detonation' | 'blowout' | 'fire' | 'ammoFireOut';
+export type BigEventKind = 'detonation' | 'blowout' | 'fire' | 'ammoFireOut' | 'bailout' | 'takeover';
 
 export interface BigEvent {
   t: number;
@@ -255,6 +259,7 @@ export type Verdict =
   | 'Crew injured'
   | 'Disabled'
   | 'Knocked out'
+  | 'Abandoned'
   | 'Ammo lost, crew safe'
   | 'Catastrophic (cook-off)';
 

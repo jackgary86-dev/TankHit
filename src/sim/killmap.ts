@@ -5,7 +5,7 @@ import { toWorld } from './frame';
 import type { Round, ShotInput, Vehicle, VehicleState, Verdict } from './types';
 import { cross, dot, madd, norm, scale, v3, type Vec3 } from './vec';
 
-export const EFFECTIVE: Verdict[] = ['Disabled', 'Knocked out', 'Catastrophic (cook-off)'];
+export const EFFECTIVE: Verdict[] = ['Disabled', 'Knocked out', 'Abandoned', 'Catastrophic (cook-off)'];
 export const isEffective = (v: Verdict) => EFFECTIVE.includes(v);
 
 export interface KillCell {

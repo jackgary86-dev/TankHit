@@ -66,7 +66,7 @@ export function newDuel(myId: string, enemyId: string, range: number, difficulty
   };
 }
 
-export const knockedOut = (v: Vehicle, s: VehicleState) => s.destroyed || aliveCrew(v, s).length < 2;
+export const knockedOut = (v: Vehicle, s: VehicleState) => s.destroyed || !!s.abandoned || aliveCrew(v, s).length < 2;
 const crewOut = (v: Vehicle, s: VehicleState, role: string) => v.crew.some((c) => c.role === role && s.crew[c.id].incapacitated);
 
 /** Whether a side can fire this turn, and why not. */
@@ -74,7 +74,7 @@ export function canFire(d: Duel, side: Side): { ok: boolean; reason?: string } {
   const v = vehicleById(side === 'player' ? d.myId : d.enemyId);
   const s = side === 'player' ? d.myState : d.enemyState;
   if (knockedOut(v, s)) return { ok: false, reason: 'knocked out' };
-  if (crewOut(v, s, 'gunner')) return { ok: false, reason: 'gunner is out – the gun cannot be laid' };
+  if (crewOut(v, s, 'gunner') && !s.gunnerReplaced) return { ok: false, reason: 'gunner is out – the gun cannot be laid' };
   if (v.modules.some((m) => m.type === 'breech' && s.moduleHp[m.id] <= 0)) return { ok: false, reason: 'breech is wrecked' };
   if (side === 'player' ? d.mySkip : d.enemySkip) return { ok: false, reason: 'loader is out – still reloading' };
   return { ok: true };
@@ -129,7 +129,8 @@ export function enemyFire(d: Duel): ShotResult | null {
   const dir = arrivalDir(d.myHullYaw);
   // Dispersion and range error, same models as the player's shots.
   const rng = makeRng(seed ^ 0x5bd1e995);
-  const sigma = dispersionMils(round) / 1000 * (d.difficulty === 'easy' ? 1.8 : d.difficulty === 'normal' ? 1.2 : 1);
+  // The commander on the gun is a worse shot than the gunner was.
+  const sigma = dispersionMils(round) / 1000 * (d.difficulty === 'easy' ? 1.8 : d.difficulty === 'normal' ? 1.2 : 1) * (d.enemyState.gunnerReplaced ? 1.6 : 1);
   const mx = gaussian(rng(), rng()) * sigma;
   const my = gaussian(rng(), rng()) * sigma;
   const right = norm(v3(dir.z, 0, -dir.x));

@@ -2,7 +2,7 @@ import { h } from './dom';
 import { GLOSSARY } from './tutorial';
 
 export function verdictClass(v: string) {
-  return v.startsWith('Catastrophic') || v === 'Knocked out' ? 'bad' : v === 'Disabled' || v === 'Crew injured' ? 'warn' : v.startsWith('Non') || v === 'Ricochet' ? 'muted' : 'ok';
+  return v.startsWith('Catastrophic') || v === 'Knocked out' || v === 'Abandoned' ? 'bad' : v === 'Disabled' || v === 'Crew injured' ? 'warn' : v.startsWith('Non') || v === 'Ricochet' ? 'muted' : 'ok';
 }
 
 export const starText = (n: number) =>

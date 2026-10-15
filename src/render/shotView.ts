@@ -470,6 +470,21 @@ const DOWN = new THREE.Color(0x4a2620);
 /** Tint gel dummies by zone damage at replay time T. */
 export function applyCrew(view: TankView, shot: ShotResult | null, T: number) {
   const v = view.vehicle;
+  // Bail-out: survivors climb out of the hatches and are gone within ~2 s; the vehicle is abandoned.
+  const bail = shot?.bigEvents.find((e) => e.kind === 'bailout');
+  const abandonedBefore = !!shot?.stateBefore.abandoned;
+  for (const c of v.crew) {
+    const g = view.crewGroups.get(c.id);
+    if (!g) continue;
+    const alive = shot ? !shot.stateAfter.crew[c.id].incapacitated : true;
+    const k = bail && alive ? Math.min(1, Math.max(0, (T - bail.t) / 2.0)) : abandonedBefore && alive ? 1 : 0;
+    g.position.y = k * 1.4;
+    g.visible = k < 1;
+    for (const m of g.children) {
+      const mat = (m as THREE.Mesh).material as THREE.MeshPhysicalMaterial;
+      if (mat) mat.opacity = 0.62 * (1 - k);
+    }
+  }
   for (const c of v.crew) {
     const zoneHp = shot ? { ...shot.stateBefore.crew[c.id].zoneHp } : ({} as Record<CrewZoneId, number>);
     if (!shot) for (const z of c.zones) zoneHp[z.zone] = z.hp;

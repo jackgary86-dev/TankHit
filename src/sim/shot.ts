@@ -612,8 +612,38 @@ export class ShotSim {
     }
   }
 
+  /**
+   * Crew reactions. A burning vehicle (fire or detonation chain that did not vent outward) is abandoned by the
+   * survivors about two seconds after it lights; a lost gunner is replaced at the gun by a living commander.
+   */
+  resolveCrewReactions() {
+    const { v, state, res } = this;
+    const alive = v.crew.filter((c) => !state.crew[c.id].incapacitated);
+    const burning = res.bigEvents.find((e) => e.kind === 'fire') ?? res.bigEvents.find((e) => e.kind === 'detonation');
+    const vented = res.bigEvents.some((e) => e.kind === 'blowout') && !res.bigEvents.some((e) => e.kind === 'fire' && !e.rack);
+    const ammoFireInside = res.ammoEvents.length > 0 && !res.bigEvents.some((e) => e.kind === 'blowout');
+    if (burning && !state.destroyed && alive.length && (ammoFireInside || state.onFire) && !vented && !state.abandoned) {
+      const t = burning.t + 2.0;
+      state.abandoned = true;
+      res.bigEvents.push({ t, kind: 'bailout', point: burning.point });
+      res.duration = Math.max(res.duration, t + 2.2);
+    }
+    const gunner = v.crew.find((c) => c.role === 'gunner');
+    const commander = v.crew.find((c) => c.role === 'commander');
+    if (gunner && commander && state.crew[gunner.id].incapacitated && !state.crew[commander.id].incapacitated && !state.gunnerReplaced && !state.abandoned) {
+      const hitT = res.crewHits.filter((h) => h.crewId === gunner.id).map((h) => h.t);
+      if (hitT.length) {
+        const t = Math.max(...hitT) + 3.0;
+        state.gunnerReplaced = true;
+        res.bigEvents.push({ t, kind: 'takeover', point: { x: commander.seat.x, y: commander.seat.y + 0.8, z: commander.seat.z } });
+        res.duration = Math.max(res.duration, t + 0.5);
+      }
+    }
+  }
+
   finish(): ShotResult {
     this.resolveCookoff();
+    this.resolveCrewReactions();
     this.res.summary = summarize(this);
     this.res.duration += 0.8;
     return this.res;
@@ -655,6 +685,7 @@ function summarize(sim: ShotSim): ShotSummary {
     return t === 'engine' || t === 'breech' || t === 'transmission';
   });
   if (cookOff === 'detonation') verdict = 'Catastrophic (cook-off)';
+  else if (state.abandoned && !before.abandoned) verdict = 'Abandoned';
   else if (alive < 2 || state.destroyed) verdict = 'Knocked out';
   else if (crewIncapacitated.length > 0 || critical) verdict = 'Disabled';
   else if (cookOff === 'blowout') verdict = 'Ammo lost, crew safe';

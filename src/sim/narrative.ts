@@ -100,6 +100,12 @@ export function narrate(shot: ShotResult, v: Vehicle, r: Round): Narrative {
     } else if (e.kind === 'fire' && !ignite) {
       parts.push('fuel caught fire');
       chapters.push({ t: e.t, label: 'Fire', kind: 'big' });
+    } else if (e.kind === 'bailout') {
+      parts.push('the survivors bailed out');
+      chapters.push({ t: e.t, label: 'Bail-out', kind: 'crew' });
+    } else if (e.kind === 'takeover') {
+      parts.push('the commander took over the gun');
+      chapters.push({ t: e.t, label: 'Commander on the gun', kind: 'crew' });
     }
   }
 

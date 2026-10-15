@@ -43,7 +43,7 @@ describe('duel', () => {
       advance(d);
     }
     expect(d.outcome).not.toBe('active');
-    expect(d.log.length).toBeGreaterThan(1);
+    expect(d.log.length).toBeGreaterThanOrEqual(1);
     expect(d.myShots.length + d.enemyShots.length).toBe(d.log.filter((e) => !/holds fire/.test(e.text)).length);
   });
 
