@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      installer:
+        description: 'Also build the Windows installer as a downloadable artifact'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -31,6 +37,24 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
+  # Manual run: produce a Windows installer as a workflow artifact without cutting a release.
+  installer:
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.installer == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run package -- --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TankHit-windows-installer
+          path: release/*.exe
+          retention-days: 14
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'

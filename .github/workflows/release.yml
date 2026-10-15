@@ -3,6 +3,16 @@ name: Release installers
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Tag or branch to build (default: the latest v* tag)'
+        required: false
+        default: ''
+      draft:
+        description: 'Publish the release as a draft'
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -16,6 +26,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+          fetch-depth: 0
+      - if: github.event_name == 'workflow_dispatch' && github.event.inputs.ref == ''
+        name: Check out the latest release tag
+        run: git checkout "$(git describe --tags --abbrev=0 --match 'v*')"
+        shell: bash
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -31,3 +48,5 @@ jobs:
       - run: npm run package -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # electron-builder publishes drafts by default; a manual run can ask for a public release.
+          EP_DRAFT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.draft == 'false' && 'false' || 'true' }}

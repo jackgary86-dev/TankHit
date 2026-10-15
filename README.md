@@ -16,7 +16,7 @@ npm run package # build installers into release/ (current OS)
 npm run smoke   # launch the desktop app, run its self-test, exit
 ```
 
-Releases: push a tag like `v0.2.0` and the `Release installers` workflow builds all three platforms and attaches them to the release.
+Releases: push a tag like `v0.2.0` and the `Release installers` workflow builds all three platforms and attaches them to the release. It can also be run from the Actions tab (choose a tag/branch and whether to publish as a draft), and the `CI` workflow can be run manually to produce a Windows installer as a downloadable artifact without cutting a release.
 
 ## Modes
 
