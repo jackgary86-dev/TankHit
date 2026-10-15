@@ -10,7 +10,11 @@ import { previewShot, simulateShot, type Preview } from './sim/shot';
 import { initialState, STATION_LOSS, woundLevel } from './sim/state';
 import type { Round, ShotResult, VehicleState } from './sim/types';
 import { DEG, v3, type Vec3 } from './sim/vec';
+import { CHALLENGES, evaluateChallenge, loadStars, saveStars, type Challenge, type ChallengeResult } from './modes/challenges';
+import { compareRounds } from './modes/compare';
 import { fmt, h, select } from './ui/dom';
+
+export type Mode = 'sandbox' | 'challenges' | 'compare';
 
 export interface Aim {
   point: THREE.Vector3;
@@ -38,6 +42,10 @@ export class App {
   aim: Aim | null = null;
   hover: Aim | null = null;
   preview: Preview | null = null;
+  mode: Mode = 'sandbox';
+  challenge: Challenge | null = null;
+  challengeResult: ChallengeResult | null = null;
+  compareIds: string[] = ['m829a1', '3bm42', 'm456a2', 'pzgr39'];
 
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
@@ -49,6 +57,9 @@ export class App {
   private aimBox = h('div', { class: 'aimbox' });
   private timeline = h('div', { class: 'timeline hidden' });
   private log = h('div', { class: 'shotlog hidden' });
+  private topbar = h('div', { class: 'topbar' });
+  private overlay = h('div', { class: 'overlay hidden' });
+  private comparePanel = h('div', { class: 'panel right compare hidden' });
   private tlRange!: HTMLInputElement;
   private tlTime!: HTMLSpanElement;
   private tlPlay!: HTMLButtonElement;
@@ -69,10 +80,11 @@ export class App {
     );
     this.aimMarker.renderOrder = 21;
     this.ctx.scene.add(this.aimLine, this.aimMarker);
-    this.ui.append(this.left, this.right, this.log, this.timeline);
+    this.ui.append(this.topbar, this.left, this.right, this.comparePanel, this.log, this.timeline, this.overlay);
     this.loadVehicle(this.vehicleId);
     this.bindInput();
     this.renderLeft();
+    this.renderTopbar();
     requestAnimationFrame(this.frame);
   }
 
@@ -98,6 +110,8 @@ export class App {
 
   resetDamage() {
     this.vstate = initialState(this.vehicle);
+    this.challengeResult = this.challenge ? { status: 'active', stars: 0 } : null;
+    this.comparePanel.classList.add('hidden');
     this.shots = [];
     this.current = -1;
     this.shotView?.dispose();
@@ -267,9 +281,118 @@ export class App {
     this.renderAimBox();
   }
 
+  // ------------------------------------------------------------ modes
+
+  setMode(m: Mode) {
+    this.mode = m;
+    this.challenge = null;
+    this.overlay.classList.add('hidden');
+    if (m === 'challenges') this.showChallengePicker();
+    this.resetDamage();
+    this.renderTopbar();
+    this.renderLeft();
+  }
+
+  renderTopbar() {
+    const tab = (m: Mode, label: string) => h('button', { class: this.mode === m ? 'on' : '', onclick: () => this.setMode(m) }, label);
+    this.topbar.replaceChildren(
+      h('span', { class: 'logo' }, 'TANK', h('b', {}, 'HIT')),
+      tab('sandbox', 'Sandbox'),
+      tab('challenges', 'Challenges'),
+      tab('compare', 'Compare Rounds'),
+    );
+  }
+
+  showChallengePicker() {
+    const stars = loadStars();
+    this.overlay.classList.remove('hidden');
+    this.overlay.replaceChildren(
+      h('div', { class: 'picker' },
+        h('h2', {}, 'Challenges'),
+        h('div', { class: 'muted' }, 'Fewer shots earn more stars. Damage carries over between shots.'),
+        ...CHALLENGES.map((c) =>
+          h('button', { class: 'challenge', onclick: () => this.startChallenge(c) },
+            h('div', { class: 'cname' }, c.name, h('span', { class: 'stars' }, starText(stars[c.id] ?? 0))),
+            h('div', { class: 'cbrief' }, c.brief),
+            h('div', { class: 'cmeta' }, `${vehicleById(c.vehicleId).name} · ${c.rounds.map((r) => roundById(r).name).join(' / ')} · ${c.distance} m · ${c.maxShots} shots`),
+          )),
+        h('button', { class: 'close', onclick: () => this.setMode('sandbox') }, 'Back to sandbox'),
+      ),
+    );
+  }
+
+  startChallenge(c: Challenge) {
+    this.overlay.classList.add('hidden');
+    this.challenge = c;
+    this.roundId = c.rounds[0];
+    this.distance = c.distance;
+    this.loadVehicle(c.vehicleId);
+    this.clearAim();
+    this.renderLeft();
+  }
+
+  private challengeBox(): HTMLElement | null {
+    const c = this.challenge;
+    if (!c) return null;
+    const res = this.challengeResult ?? { status: 'active', stars: 0 };
+    const status =
+      res.status === 'won' ? h('div', { class: 'cstatus won' }, 'Complete! ', starText(res.stars)) :
+      res.status === 'failed' ? h('div', { class: 'cstatus failed' }, `Failed – ${res.reason ?? ''}`) :
+      h('div', { class: 'cstatus' }, `Shots ${this.shots.length} / ${c.maxShots}`);
+    return h('div', { class: 'challengebox' },
+      h('div', { class: 'cname' }, c.name),
+      h('div', { class: 'cbrief' }, c.brief),
+      status,
+      h('div', { class: 'buttons' },
+        h('button', { onclick: () => this.startChallenge(c) }, 'Retry'),
+        h('button', { onclick: () => this.showChallengePicker() }, 'All challenges'),
+      ),
+    );
+  }
+
+  runCompare() {
+    const a = this.aim ?? this.hover;
+    if (!a || !this.compareIds.length) return;
+    const seed = (Math.random() * 2 ** 31) | 0;
+    this.vstate = initialState(this.vehicle);
+    this.shots = compareRounds(this.vehicle, this.compareIds, this.shotOrigin(a), v3(a.dir.x, a.dir.y, a.dir.z), this.distance, seed);
+    this.showShot(0, true);
+    this.renderCompare();
+  }
+
+  renderCompare() {
+    const shots = this.shots;
+    this.comparePanel.classList.toggle('hidden', !shots.length || this.mode !== 'compare');
+    this.right.classList.add('hidden');
+    if (!shots.length) return;
+    const row = (label: string, f: (s: ShotResult) => string | HTMLElement) =>
+      h('tr', {}, h('th', {}, label), ...shots.map((s) => h('td', {}, f(s))));
+    const v = this.vehicle;
+    this.comparePanel.replaceChildren(
+      h('h2', {}, 'Compare Rounds'),
+      h('div', { class: 'muted' }, `Same point, same seed, fresh ${v.name} for every round. Click a column to replay it.`),
+      h('table', { class: 'cmp' },
+        h('tr', {}, h('th', {}), ...shots.map((s, i) => h('th', { class: `col ${i === this.current ? 'on' : ''}`, onclick: () => { this.showShot(i, true); this.renderCompare(); } }, roundById(s.input.roundId).name))),
+        row('Family', (s) => roundById(s.input.roundId).family),
+        row('Pen @ range', (s) => `${fmt(s.summary.penAtTargetMm)} mm`),
+        row('LOS', (s) => `${fmt(s.summary.losMm)} mm`),
+        row('Penetrated', (s) => (s.summary.penetrated ? 'Yes' : 'No')),
+        row('Residual', (s) => `${fmt(s.summary.residualMm)} mm`),
+        row('Spall', (s) => `${s.summary.spallCount}`),
+        row('Crew hit', (s) => `${s.summary.crewHit.length}`),
+        row('Crew out', (s) => `${s.summary.crewIncapacitated.length}`),
+        row('Modules', (s) => `${s.summary.modulesDamaged.length}`),
+        row('Cook-off', (s) => (s.summary.cookOff === 'none' ? '—' : s.summary.cookOff)),
+        row('Result', (s) => h('span', { class: verdictClass(s.summary.verdict) }, s.summary.verdict)),
+      ),
+    );
+  }
+
   // ------------------------------------------------------------ firing
 
   fire() {
+    if (this.mode === 'compare') return this.runCompare();
+    if (this.challenge && this.challengeResult?.status !== 'active') return;
     const a = this.aim ?? this.hover;
     if (!a) return;
     const dir = v3(a.dir.x, a.dir.y, a.dir.z);
@@ -281,8 +404,13 @@ export class App {
     );
     this.vstate = shot.stateAfter;
     this.shots.push(shot);
+    if (this.challenge) {
+      this.challengeResult = evaluateChallenge(this.challenge, this.vehicle, this.vstate, this.shots);
+      if (this.challengeResult.status === 'won') saveStars(this.challenge.id, this.challengeResult.stars);
+    }
     this.showShot(this.shots.length - 1, true);
     this.updatePreview();
+    if (this.challenge) this.renderLeft();
   }
 
   showShot(i: number, play: boolean) {
@@ -350,9 +478,11 @@ export class App {
   renderLeft() {
     const r = this.round;
     const fam = r.family;
-    const roundsOfFam = ROUNDS.filter((x) => x.family === fam);
+    const allowed = this.challenge ? ROUNDS.filter((x) => this.challenge!.rounds.includes(x.id)) : ROUNDS;
+    const families = FAMILIES.filter((f) => allowed.some((x) => x.family === f));
+    const roundsOfFam = allowed.filter((x) => x.family === fam);
     const pen = penetrationAt(r, this.distance);
-    const dist = h('input', { type: 'range', min: 0, max: 3000, step: 50, value: this.distance });
+    const dist = h('input', { type: 'range', min: 0, max: 3000, step: 50, value: this.distance, disabled: !!this.challenge });
     const distVal = h('span', { class: 'val' }, `${this.distance} m`);
     const penVal = h('span', { class: 'val' }, `${fmt(pen)} mm`);
     dist.addEventListener('input', () => {
@@ -379,18 +509,36 @@ export class App {
       this.updatePreview();
     });
 
+    const target = select(VEHICLES.map((v) => ({ value: v.id, label: `[${v.br}] ${v.name}` })), this.vehicleId, (id) => {
+      this.loadVehicle(id);
+      this.clearAim();
+      this.renderLeft();
+    });
+    target.disabled = !!this.challenge;
+    const compareList = this.mode === 'compare'
+      ? h('div', { class: 'cmplist' },
+          h('label', {}, `Rounds to compare (${this.compareIds.length}/4)`),
+          ...ROUNDS.map((x) => {
+            const cb = h('input', { type: 'checkbox' });
+            cb.checked = this.compareIds.includes(x.id);
+            cb.disabled = !cb.checked && this.compareIds.length >= 4;
+            cb.addEventListener('change', () => {
+              this.compareIds = cb.checked ? [...this.compareIds, x.id] : this.compareIds.filter((id) => id !== x.id);
+              this.renderLeft();
+            });
+            return h('label', { class: 'check small' }, cb, ` ${x.name}`, h('span', { class: 'muted' }, ` ${x.family}`));
+          }))
+      : null;
+
     this.left.replaceChildren(
-      h('h2', {}, 'Protection Analysis'),
+      h('h2', {}, this.mode === 'compare' ? 'Compare Rounds' : this.challenge ? 'Challenge' : 'Protection Analysis'),
+      this.challengeBox() ?? '',
       h('label', {}, 'Target'),
-      select(VEHICLES.map((v) => ({ value: v.id, label: `[${v.br}] ${v.name}` })), this.vehicleId, (id) => {
-        this.loadVehicle(id);
-        this.clearAim();
-        this.renderLeft();
-      }),
+      target,
       h('div', { class: 'desc' }, this.vehicle.description),
       h('label', {}, 'Round type'),
-      select(FAMILIES.map((f) => ({ value: f, label: f })), fam, (f) => {
-        this.roundId = ROUNDS.find((x) => x.family === f)!.id;
+      select(families.map((f) => ({ value: f, label: f })), fam, (f) => {
+        this.roundId = allowed.find((x) => x.family === f)!.id;
         this.renderLeft();
         this.updatePreview();
       }),
@@ -413,8 +561,9 @@ export class App {
       h('label', { class: 'check' }, cam, ' Respect camera angle'),
       angleCtl,
       this.aimBox,
+      compareList ?? '',
       h('div', { class: 'buttons' },
-        h('button', { class: 'fire', onclick: () => this.fire() }, 'FIRE  [Space]'),
+        h('button', { class: 'fire', onclick: () => this.fire() }, this.mode === 'compare' ? 'COMPARE  [Space]' : 'FIRE  [Space]'),
         h('button', { onclick: () => this.clearAim() }, 'Clear aim [Esc]'),
         h('button', { onclick: () => this.resetDamage() }, 'Repair vehicle'),
       ),
@@ -448,6 +597,11 @@ export class App {
 
   renderRight() {
     const shot = this.shots[this.current];
+    if (this.mode === 'compare') {
+      this.right.classList.add('hidden');
+      if (shot) this.renderCompare();
+      return;
+    }
     if (!shot) {
       this.right.classList.add('hidden');
       return;
@@ -504,7 +658,10 @@ export class App {
         this.playing = false;
       }
     }
-    if (shot) this.syncTimeline();
+    if (shot) {
+      this.replayT = Math.min(Math.max(0, this.replayT), shot.duration);
+      this.syncTimeline();
+    }
     this.shotView?.update(this.replayT);
     this.updateSection();
     this.ctx.renderer.render(this.ctx.scene, this.ctx.camera);
@@ -535,6 +692,9 @@ export class App {
 export function verdictClass(v: string) {
   return v.startsWith('Catastrophic') || v === 'Knocked out' ? 'bad' : v === 'Disabled' || v === 'Crew injured' ? 'warn' : v.startsWith('Non') || v === 'Ricochet' ? 'muted' : 'ok';
 }
+
+const starText = (n: number) =>
+  h('span', { class: 'starset' }, ...[0, 1, 2].map((i) => h('i', { class: i < n ? 'full' : '' }, i < n ? '★' : '☆')));
 
 function stat(k: string, v: string) {
   return h('div', { class: 'stat' }, h('span', { class: 'k' }, k), h('span', { class: 'v' }, v));
