@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      # Desktop shell self-test (fires a shot, runs the kill-map worker, checks storage and WebGL).
+      - run: xvfb-run -a npm run smoke
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

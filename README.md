@@ -2,6 +2,8 @@
 
 **Play it:** https://jackgary86-dev.github.io/TankHit/
 
+**Download:** installers for Windows (.exe), macOS (.dmg) and Linux (.AppImage / .deb) are attached to every [GitHub Release](https://github.com/jackgary86-dev/TankHit/releases/latest). The desktop app runs fully offline.
+
 Armor penetration sandbox. Pick a tank, a round and an angle, fire, then watch an X-ray cutaway replay of the penetrator, spall, ballistic-gel crew dummies and ammunition cook-off.
 
 ```bash
@@ -9,7 +11,12 @@ npm install
 npm run dev     # play at http://localhost:5173
 npm test        # simulation unit tests
 npm run build   # production build in dist/
+npm run desktop # run the Electron desktop app
+npm run package # build installers into release/ (current OS)
+npm run smoke   # launch the desktop app, run its self-test, exit
 ```
+
+Releases: push a tag like `v0.2.0` and the `Release installers` workflow builds all three platforms and attaches them to the release.
 
 ## Modes
 

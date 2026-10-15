@@ -1,21 +1,78 @@
 {
   "name": "tankhit",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "desktop": "vite build && electron .",
+    "package": "vite build && electron-builder",
+    "smoke": "node electron/smoke.cjs"
   },
   "dependencies": {
     "three": "0.170.0"
   },
   "devDependencies": {
     "@types/three": "0.170.0",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
     "typescript": "5.6.3",
     "vite": "5.4.11",
     "vitest": "2.1.8"
+  },
+  "allowScripts": {
+    "electron@33.2.1": true
+  },
+  "main": "electron/main.cjs",
+  "description": "Armor penetration sandbox with X-ray replays, gel crew dummies and ammunition cook-off.",
+  "author": "jackgary86-dev",
+  "license": "MIT",
+  "build": {
+    "appId": "dev.jackgary86.tankhit",
+    "productName": "TankHit",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "files": [
+      "dist/**",
+      "electron/**",
+      "build/icon.png"
+    ],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.games"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon.png",
+      "category": "Game"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "jackgary86-dev",
+      "repo": "TankHit"
+    }
   }
 }
