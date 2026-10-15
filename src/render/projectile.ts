@@ -26,6 +26,23 @@ export interface ShellPose {
 export const bodyTraces = (traces: Trace[]) => traces.filter((t) => t.kind === 'shell' || t.kind === 'ricochet');
 
 /**
+ * Contact easing: a shell does not glide through a plate at constant speed. Over the last 15 % of the trace that
+ * ends at the first impact it decelerates (ease-out); over the first 25 % of the trace that leaves the impact it
+ * accelerates back up (ease-in). Trace end points are unchanged so the shot log and timeline still agree.
+ */
+export function easeContact(k: number, endsAtImpact: boolean, startsAtImpact: boolean): number {
+  if (endsAtImpact && k > 0.85) {
+    const u = (k - 0.85) / 0.15;
+    return 0.85 + 0.15 * (1 - (1 - u) * (1 - u));
+  }
+  if (startsAtImpact && k < 0.25) {
+    const u = k / 0.25;
+    return 0.25 * u * u;
+  }
+  return k;
+}
+
+/**
  * Position and heading of the projectile at replay time T. The shell rides its traces in order; once the last
  * trace ends it stays at the end point (stopped) unless it left the vehicle or was consumed.
  */
@@ -38,8 +55,8 @@ export function shellPoseAt(traces: Trace[], impacts: ImpactEvent[], T: number, 
     pos: new THREE.Vector3(p.x, p.y, p.z), dir: d, phase, t: T, remaining, sinceImpact, along, traceKind,
   });
   if (!body.length) return pose({ x: 0, y: -10, z: 0 }, new THREE.Vector3(1, 0, 0), 'gone', 1);
-  // HEAT: the body is consumed when the charge fires on the first plate.
-  if (family === 'HEAT' && first && T >= first.t) return pose(first.point, dirOf(body[0]), 'gone', 0);
+  // HEAT: the body collapses against the plate over a few hundredths of a second, then is consumed.
+  if (family === 'HEAT' && first && T >= first.t) return pose(first.point, dirOf(body[0]), T - first.t < HEAT_COLLAPSE ? 'stopped' : 'gone', 0);
   for (let i = 0; i < body.length; i++) {
     const tr = body[i];
     if (T < tr.t0) {
@@ -47,7 +64,10 @@ export function shellPoseAt(traces: Trace[], impacts: ImpactEvent[], T: number, 
       return pose(tr.from, d, 'flight', 1);
     }
     if (T <= tr.t1 || i === body.length - 1) {
-      const k = tr.t1 > tr.t0 ? Math.min(1, (T - tr.t0) / (tr.t1 - tr.t0)) : 1;
+      const kRaw = tr.t1 > tr.t0 ? Math.min(1, (T - tr.t0) / (tr.t1 - tr.t0)) : 1;
+      const endsAtImpact = !!first && Math.abs(tr.t1 - first.t) < 1e-6;
+      const startsAtImpact = !!first && Math.abs(tr.t0 - first.t) < 1e-6 && tr.kind === 'shell';
+      const k = easeContact(kRaw, endsAtImpact, startsAtImpact);
       const p = { x: tr.from.x + (tr.to.x - tr.from.x) * k, y: tr.from.y + (tr.to.y - tr.from.y) * k, z: tr.from.z + (tr.to.z - tr.from.z) * k };
       const d = dirOf(tr);
       const along = k * Math.hypot(tr.to.x - tr.from.x, tr.to.y - tr.from.y, tr.to.z - tr.from.z);
@@ -64,6 +84,8 @@ export function shellPoseAt(traces: Trace[], impacts: ImpactEvent[], T: number, 
   }
   return pose(body[body.length - 1].to, dirOf(body[body.length - 1]), 'stopped', 0.15);
 }
+
+export const HEAT_COLLAPSE = 0.06;
 
 const dirOf = (tr: Trace) => new THREE.Vector3(tr.to.x - tr.from.x, tr.to.y - tr.from.y, tr.to.z - tr.from.z).normalize();
 
@@ -266,9 +288,40 @@ export class ProjectileView {
     // Ricochets tumble end over end.
     if (p.phase === 'ricochet') g.rotateOnAxis(this.tumbleAxis, p.sinceImpact * 18);
 
-    // Rod erosion inside the target: shorten from the nose and heat the tip.
+    // ---- reactions at the plate (all keyed to time since the first impact)
     const body = this.parts.body;
-    if (this.round.family === 'APFSDS') {
+    const first = this.impacts[0];
+    const si = p.sinceImpact;
+    body.scale.set(1, 1, 1);
+    body.position.set(0, 0, 0);
+    if (first && si >= 0) {
+      const n = new THREE.Vector3(first.normal.x, first.normal.y, first.normal.z);
+      if (this.round.family === 'HEAT') {
+        // Nose collapses into the plate as the charge fires.
+        const u = Math.min(1, si / HEAT_COLLAPSE);
+        body.scale.set(1 - 0.7 * u, 1 + 0.4 * u, 1 + 0.4 * u);
+        body.position.x = -this.parts.length * 0.35 * u;
+      } else if (this.round.family === 'HESH') {
+        // Filler squashes into a pancake on the face before it detonates.
+        const u = Math.min(1, si / 0.08);
+        body.scale.set(1 - 0.85 * u, 1 + 1.8 * u, 1 + 1.8 * u);
+        body.position.x = -this.parts.length * 0.42 * u;
+        g.visible = si < 0.14;
+      } else if (first.kind === 'nonpen' || first.kind === 'shatter') {
+        // Crumples against the face, then the spent shot drops away from the plate.
+        const u = Math.min(1, si / 0.1);
+        body.scale.set(1 - 0.45 * u, 1 + 0.25 * u, 1 + 0.25 * u);
+        if (si > 0.1) {
+          const f = si - 0.1;
+          const drop = new THREE.Vector3(first.point.x, first.point.y, first.point.z).addScaledVector(n, 0.08 + f * 0.6).add(new THREE.Vector3(0, -4.9 * f * f, 0));
+          g.position.copy(drop);
+          g.rotateOnAxis(this.tumbleAxis, f * 9);
+          g.visible = first.kind !== 'shatter' && drop.y > 0.05 && f < 1.5;
+        }
+      }
+    }
+    // Rod erosion inside the target: shorten from the nose and heat the tip.
+    if (this.round.family === 'APFSDS' && first?.kind === 'pen') {
       const k = p.phase === 'inside' || p.phase === 'stopped' ? p.remaining : 1;
       body.scale.set(k, 1, 1);
       body.position.x = -this.parts.length * 0.5 * (1 - k);
@@ -278,6 +331,10 @@ export class ProjectileView {
       this.glow.intensity = heat * 0.5;
     } else {
       const mat = body.material as THREE.MeshStandardMaterial;
+      if (this.round.family === 'APFSDS') {
+        const heat = p.sinceImpact >= 0 ? Math.max(0, 1 - p.sinceImpact / 1.5) : 0;
+        mat.emissive.setRGB(heat, heat * 0.35, heat * 0.05);
+      }
       const heat = p.sinceImpact >= 0 ? Math.max(0, 0.6 - p.sinceImpact / 1.2) : 0;
       mat.emissive.setRGB(heat, heat * 0.4, heat * 0.08);
       this.glow.intensity = heat * 0.35;

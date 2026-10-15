@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { roundById } from '../src/data/rounds';
 import { vehicleById } from '../src/data/vehicles';
-import { buildProjectile, shellPoseAt, visualScale } from '../src/render/projectile';
+import { buildProjectile, HEAT_COLLAPSE, shellPoseAt, visualScale } from '../src/render/projectile';
 import { simulateShot } from '../src/sim/shot';
 import { initialState } from '../src/sim/state';
 import { v3 } from '../src/sim/vec';
@@ -37,7 +37,7 @@ describe('projectile pose', () => {
     const s = fire('m456a2');
     const imp = s.impacts[0];
     expect(shellPoseAt(s.traces, s.impacts, imp.t - 0.05, 'HEAT').phase).toBe('flight');
-    expect(shellPoseAt(s.traces, s.impacts, imp.t + 0.05, 'HEAT').phase).toBe('gone');
+    expect(shellPoseAt(s.traces, s.impacts, imp.t + HEAT_COLLAPSE + 0.01, 'HEAT').phase).toBe('gone');
   });
 
   it('a ricochet follows the bounce trace', () => {

@@ -27,6 +27,8 @@ export class ShotView {
   private fx: { kind: string; t: number; obj: THREE.Object3D }[] = [];
   private bursts: { t: number; b: Burst }[] = [];
   private projectile: ProjectileView;
+  /** Deformation meshes parented to the hull/turret (petalled holes, bulges). */
+  private plateFx: THREE.Object3D[] = [];
 
   constructor(readonly view: TankView, readonly shot: ShotResult) {
     const n = shot.traces.length;
@@ -75,6 +77,7 @@ export class ShotView {
         new THREE.MeshBasicMaterial({ color: imp.kind === 'era' ? 0xfff0a0 : 0xffa040, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }),
       );
       blast.position.set(imp.point.x, imp.point.y, imp.point.z);
+      blast.userData.era = imp.kind === 'era';
       this.add('blast', imp.t, blast);
     }
   }
@@ -126,7 +129,75 @@ export class ShotView {
     this.group.add(b.points);
   }
 
+  /** Contact effects at the first plate: a flash and sparks scaled by impact energy, plus plate deformation. */
+  private buildContact() {
+    const first = this.shot.impacts[0];
+    if (!first || !first.plateId) return;
+    const energy = Math.min(1, ((first.penMm ?? 100) / 500) * 0.7 + 0.3);
+    const n = new THREE.Vector3(first.normal.x, first.normal.y, first.normal.z).normalize();
+    const p = new THREE.Vector3(first.point.x, first.point.y, first.point.z);
+    const plate = this.view.vehicle.plates.find((q) => q.id === first.plateId);
+    const group = plate?.group === 'turret' ? this.view.turret : this.view.hull;
+    const toLocal = (w: THREE.Vector3) => group.worldToLocal(w.clone());
+    const localN = n.clone().transformDirection(new THREE.Matrix4().copy(group.matrixWorld).invert());
+
+    // Flash at the contact point.
+    const flash = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 14, 10),
+      new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false }),
+    );
+    flash.position.copy(p).addScaledVector(n, 0.02);
+    flash.userData.energy = energy;
+    this.add('flash', first.t, flash);
+    const sparkDir = n.clone().multiplyScalar(0.9).add(new THREE.Vector3(0, 0.3, 0)).normalize();
+    this.burst(first.t, first.point, { count: Math.round(30 + 50 * energy), color: 0xffd080, speed: 2.5 + 3 * energy, lift: -4, size: 0.04, grow: -0.4, life: 0.5, additive: true, spread: sparkDir.clone().addScalar(1).multiplyScalar(0.5).add(new THREE.Vector3(0.4, 0.4, 0.4)) });
+
+    if (first.kind === 'pen') {
+      // Petalled hole: six petals folded in along the shot, growing as the shell pushes through.
+      const cal = Math.max(0.03, (this.shot.summary.penAtTargetMm > 300 ? 0.03 : 0.085) * (first.kind === 'pen' ? 1 : 1));
+      const petals = new THREE.Group();
+      for (let i = 0; i < 6; i++) {
+        const tri = new THREE.Mesh(
+          new THREE.ConeGeometry(cal * 0.55, cal * 1.6, 3, 1, true),
+          new THREE.MeshStandardMaterial({ color: 0x5a5d62, metalness: 0.8, roughness: 0.45, side: THREE.DoubleSide, emissive: 0x401800 }),
+        );
+        tri.geometry.translate(0, cal * 0.8, 0);
+        const holder = new THREE.Group();
+        holder.rotation.z = (i / 6) * Math.PI * 2;
+        tri.rotation.x = -1.1; // folded inward (toward -normal in local frame)
+        holder.add(tri);
+        petals.add(holder);
+      }
+      petals.position.copy(toLocal(p));
+      petals.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), localN);
+      petals.userData = { t: first.t, kind: 'petals' };
+      petals.visible = false;
+      group.add(petals);
+      this.plateFx.push(petals);
+    } else if (first.kind === 'nonpen' || first.kind === 'shatter') {
+      // Bulge on the inside face.
+      const t = Math.max((plate?.mm ?? 20) / 1000, 0.01);
+      const bulge = new THREE.Mesh(
+        new THREE.SphereGeometry(0.09, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0x6a6d72, metalness: 0.7, roughness: 0.5 }),
+      );
+      bulge.position.copy(toLocal(p.clone().addScaledVector(n, -t)));
+      bulge.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), localN.clone().negate());
+      bulge.scale.set(1, 0.35 * energy, 1);
+      bulge.userData = { t: first.t, kind: 'bulge' };
+      bulge.visible = false;
+      group.add(bulge);
+      this.plateFx.push(bulge);
+    } else if (first.kind === 'ricochet') {
+      // Spark streak skating along the plate in the deflected direction.
+      const d = new THREE.Vector3(this.shot.input.dir.x, this.shot.input.dir.y, this.shot.input.dir.z).normalize();
+      const refl = d.clone().sub(n.clone().multiplyScalar(2 * d.dot(n))).normalize();
+      this.burst(first.t, first.point, { count: 40, color: 0xffc060, speed: 6, lift: -2, size: 0.04, grow: -0.3, life: 0.45, additive: true, spread: refl.clone().multiplyScalar(0.9).addScalar(0.15) });
+    }
+  }
+
   private buildParticles() {
+    this.buildContact();
     for (const imp of this.shot.impacts) {
       if (imp.kind === 'pen' || imp.kind === 'nonpen' || imp.kind === 'ricochet') {
         this.burst(imp.t, imp.point, { count: imp.kind === 'pen' ? 26 : 18, color: 0xffb050, speed: 2.2, lift: -3, size: 0.05, grow: -0.5, life: 0.6, additive: true });
@@ -178,10 +249,17 @@ export class ShotView {
         jet.scale.set(flick, Math.min(1, age * 4) * life + 0.01, flick);
         (jet.material as THREE.MeshBasicMaterial).opacity = 0.8 * life;
         light.intensity = 25 * life * flick;
+      } else if (f.kind === 'flash') {
+        const m = f.obj as THREE.Mesh;
+        const e = m.userData.energy as number;
+        m.scale.setScalar(0.03 + (0.12 + 0.2 * e) * Math.min(1, age * 12));
+        (m.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - age / (0.12 + 0.1 * e));
+        m.visible = age < 0.25;
       } else if (f.kind === 'blast') {
         const m = f.obj as THREE.Mesh;
-        m.scale.setScalar(0.05 + Math.min(0.55, age * 2.5));
-        (m.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.85 - age * 1.6);
+        const era = !!m.userData.era;
+        m.scale.setScalar(era ? 0.04 + Math.min(0.2, age * 2.0) : 0.05 + Math.min(0.55, age * 2.5));
+        (m.material as THREE.MeshBasicMaterial).opacity = Math.max(0, era ? 0.7 - age * 4 : 0.85 - age * 1.6);
       } else if (f.kind === 'fire') {
         const light = f.obj.children[0] as THREE.PointLight;
         const glow = f.obj.children[1] as THREE.Mesh;
@@ -252,6 +330,18 @@ export class ShotView {
     pos.needsUpdate = col.needsUpdate = hpos.needsUpdate = hcol.needsUpdate = true;
 
     this.projectile.update(T);
+    for (const fx of this.plateFx) {
+      const age = T - (fx.userData.t as number);
+      fx.visible = age >= 0;
+      if (!fx.visible) continue;
+      const u = Math.min(1, age / 0.1);
+      if (fx.userData.kind === 'petals') {
+        fx.scale.setScalar(0.2 + 0.8 * u);
+        for (const holder of fx.children) (holder.children[0] as THREE.Mesh).rotation.x = -0.2 - 0.9 * u;
+      } else {
+        fx.scale.y = 0.35 * u;
+      }
+    }
     for (const m of this.markers) m.visible = T >= (m.userData.t as number);
     for (const w of this.wounds) {
       const age = T - (w.userData.t as number);
@@ -273,6 +363,14 @@ export class ShotView {
 
   dispose() {
     this.projectile.dispose();
+    for (const fx of this.plateFx) {
+      fx.removeFromParent();
+      fx.traverse((o) => {
+        const m = o as THREE.Mesh;
+        m.geometry?.dispose?.();
+        (m.material as THREE.Material | undefined)?.dispose?.();
+      });
+    }
     this.group.traverse((o) => {
       const m = o as THREE.Mesh;
       m.geometry?.dispose();
@@ -339,8 +437,20 @@ export function applyDamage(view: TankView, shot: ShotResult | null, T: number) 
     if (p.kind !== 'era') continue;
     const spentBefore = !!base?.eraSpent[p.id];
     const firedAt = shot?.impacts.find((i) => i.kind === 'era' && i.plateId === p.id)?.t;
-    const visible = !spentBefore && !(firedAt !== undefined && T >= firedAt);
-    view.plateMeshes.get(p.id)!.visible = visible;
+    const mesh = view.plateMeshes.get(p.id)!;
+    // The brick blows outward along its normal for a quarter second, then is gone.
+    const fly = firedAt !== undefined && T >= firedAt ? Math.min(1, (T - firedAt) / 0.25) : 0;
+    const imp = shot?.impacts.find((i) => i.kind === 'era' && i.plateId === p.id);
+    if (imp && fly > 0 && fly < 1) {
+      const nn = new THREE.Vector3(imp.normal.x, imp.normal.y, imp.normal.z);
+      mesh.position.copy(nn.multiplyScalar(0.35 * fly));
+      mesh.rotation.set(fly * 2.5, 0, fly * 1.5);
+    } else {
+      mesh.position.set(0, 0, 0);
+      mesh.rotation.set(0, 0, 0);
+    }
+    const visible = !spentBefore && !(firedAt !== undefined && fly >= 1);
+    mesh.visible = visible;
     view.plateEdges.get(p.id)!.visible = visible && !!view.plateEdges.get(p.id)!.userData.xray;
   }
   applyCrew(view, shot, T);

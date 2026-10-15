@@ -66,24 +66,27 @@ export const sfx = {
     noise(c, 0.6, 'lowpass', 900, 0.7, 0.9);
     tone(c, 110, 35, 0.5, 0.8);
   },
-  pen() {
+  /** `k` scales loudness by impact energy (0..1). */
+  pen(k = 1) {
     const c = audio();
     if (!c) return;
-    noise(c, 0.25, 'bandpass', 2600, 2, 0.7);
-    tone(c, 420, 180, 0.3, 0.35, 'triangle');
+    noise(c, 0.25, 'bandpass', 2600, 2, 0.7 * k);
+    tone(c, 420, 180, 0.3, 0.35 * k, 'triangle');
+    noise(c, 0.5, 'lowpass', 500, 0.7, 0.5 * k);
   },
-  nonpen() {
+  nonpen(k = 1) {
     const c = audio();
     if (!c) return;
-    tone(c, 1900, 1500, 0.7, 0.3, 'sine');
-    tone(c, 2870, 2500, 0.5, 0.15, 'sine');
-    noise(c, 0.08, 'highpass', 3000, 1, 0.4);
+    tone(c, 1900, 1500, 0.7, 0.3 * k, 'sine');
+    tone(c, 2870, 2500, 0.5, 0.15 * k, 'sine');
+    noise(c, 0.08, 'highpass', 3000, 1, 0.4 * k);
+    noise(c, 0.3, 'lowpass', 700, 0.7, 0.4 * k);
   },
-  ricochet() {
+  ricochet(k = 1) {
     const c = audio();
     if (!c) return;
-    tone(c, 3200, 700, 0.6, 0.25, 'sawtooth');
-    noise(c, 0.1, 'highpass', 2500, 1, 0.4);
+    tone(c, 3200, 700, 0.6, 0.25 * k, 'sawtooth');
+    noise(c, 0.1, 'highpass', 2500, 1, 0.4 * k);
   },
   blast() {
     const c = audio();

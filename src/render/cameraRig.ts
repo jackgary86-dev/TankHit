@@ -23,6 +23,19 @@ export function frameImpact(app: App, shot: ShotResult) {
 }
 
 /** Ease toward the framing goal and, while playing, follow the penetrator head. */
+/** Brief camera shake after the first impact, scaled by energy; deterministic in replay time. */
+export function impactShake(app: App) {
+  const shot = app.shots[app.current];
+  const first = shot?.impacts[0];
+  if (!shot || !first || app.gunner.active) return;
+  const age = app.replayT - first.t;
+  if (age < 0 || age > 0.35) return;
+  const energy = Math.min(1, ((first.penMm ?? 100) / 500) * 0.7 + 0.3);
+  const amp = 0.035 * energy * (1 - age / 0.35);
+  const s = (f: number, ph: number) => Math.sin(age * f + ph) * amp;
+  app.ctx.camera.position.add(new THREE.Vector3(s(90, 0), s(113, 1.3), s(70, 2.1)));
+}
+
 export function updateAutoCam(app: App) {
   if (!app.autoCam || !app.camGoal || app.gunner.active) return;
   const shot = app.shots[app.current];
