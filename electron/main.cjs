@@ -1,5 +1,5 @@
 // Electron shell: serves the Vite build from disk in a native window and remembers the window bounds.
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, screen, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -22,8 +22,18 @@ function saveBounds(win) {
   }
 }
 
+/** Keep a remembered window inside the display it is on (monitors get unplugged, resolutions change). */
+function clampBounds(b) {
+  const area = screen.getDisplayMatching({ x: b.x ?? 0, y: b.y ?? 0, width: b.width, height: b.height }).workArea;
+  const width = Math.max(900, Math.min(b.width, area.width));
+  const height = Math.max(600, Math.min(b.height, area.height));
+  const x = b.x === undefined ? undefined : Math.min(Math.max(b.x, area.x), area.x + area.width - width);
+  const y = b.y === undefined ? undefined : Math.min(Math.max(b.y, area.y), area.y + area.height - height);
+  return { ...b, x, y, width, height };
+}
+
 function createWindow() {
-  const saved = loadBounds();
+  const saved = clampBounds(loadBounds());
   const win = new BrowserWindow({
     x: saved.x,
     y: saved.y,
@@ -71,7 +81,23 @@ function createWindow() {
           return { verdict: a.shots[0]?.summary.verdict, cells: a.killOverlay.count, storage: localStorage.getItem('tankhit.smoke'), webgl: !!a.ctx.renderer.getContext(), audio: typeof AudioContext };
         })()`);
         console.log('SMOKE', JSON.stringify(result));
-        const ok = !!result.verdict && result.cells > 0 && result.storage === '1' && result.webgl;
+        // Layout: every panel must sit inside the viewport at common window sizes, with no sideways scroll.
+        const layout = {};
+        for (const [w, hgt] of [[1024, 768], [1720, 810], [1366, 768]]) {
+          win.setContentSize(w, hgt);
+          await new Promise((r) => setTimeout(r, 250));
+          layout[`${w}x${hgt}`] = await win.webContents.executeJavaScript(`(() => {
+            const bad = [];
+            for (const el of document.querySelectorAll('.panel:not(.hidden), .topbar, .timeline:not(.hidden)')) {
+              const r = el.getBoundingClientRect();
+              if (r.left < 0 || r.right > innerWidth + 0.5 || r.top < 0) bad.push(el.className + ' ' + Math.round(r.left) + '..' + Math.round(r.right));
+            }
+            return { ok: bad.length === 0 && scrollX === 0, bad, scrollX, w: innerWidth };
+          })()`);
+        }
+        console.log('LAYOUT', JSON.stringify(layout));
+        const layoutOk = Object.values(layout).every((l) => l.ok);
+        const ok = !!result.verdict && result.cells > 0 && result.storage === '1' && result.webgl && layoutOk;
         app.exit(ok ? 0 : 1);
       } catch (err) {
         console.log('SMOKE error', String(err));

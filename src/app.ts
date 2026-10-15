@@ -119,6 +119,13 @@ export class App {
     this.renderTopbar();
     this.loadFromHash();
     window.addEventListener('hashchange', () => this.loadFromHash());
+    // focus() and scrollIntoView() can still shift an overflow:hidden page; keep the viewport pinned.
+    const pin = () => {
+      if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+      for (const el of [document.documentElement, document.body, this.ui]) if (el.scrollLeft || el.scrollTop) { el.scrollLeft = 0; el.scrollTop = 0; }
+    };
+    window.addEventListener('scroll', pin, { passive: true });
+    this.ui.addEventListener('scroll', pin, { passive: true });
     if (!location.hash) this.tutorial.maybeShow();
     requestAnimationFrame(this.frame);
   }
