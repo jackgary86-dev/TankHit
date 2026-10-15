@@ -1,11 +1,16 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 
 export interface SceneCtx {
   renderer: THREE.WebGLRenderer;
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   controls: OrbitControls;
+  composer: EffectComposer;
 }
 
 export function createScene(container: HTMLElement): SceneCtx {
@@ -43,14 +48,21 @@ export function createScene(container: HTMLElement): SceneCtx {
 
   scene.add(createGround());
 
+  const composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloom = new UnrealBloomPass(new THREE.Vector2(container.clientWidth, container.clientHeight), 0.55, 0.45, 0.82);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+
   const onResize = () => {
     renderer.setSize(container.clientWidth, container.clientHeight);
+    composer.setSize(container.clientWidth, container.clientHeight);
     camera.aspect = container.clientWidth / container.clientHeight;
     camera.updateProjectionMatrix();
   };
   window.addEventListener('resize', onResize);
 
-  return { renderer, scene, camera, controls };
+  return { renderer, scene, camera, controls, composer };
 }
 
 /** Concrete pad: a procedurally drawn slab texture with panel seams. */

@@ -4,7 +4,8 @@ import { VEHICLES, vehicleById } from './data/vehicles';
 import { createScene, type SceneCtx } from './render/scene';
 import { ShotView, applyDamage } from './render/shotView';
 import { buildTank, type TankView } from './render/tank';
-import { cameraSectionPlane, setSectionPlane, setXray, shotSectionPlane, type SectionMode } from './render/xray';
+import { muted, setMuted, sfx } from './render/audio';
+import { cameraSectionPlane, HEAT_STOPS, heatColor, setSectionPlane, setXray, shotSectionPlane, type SectionMode } from './render/xray';
 import { penetrationAt } from './sim/penetration';
 import { previewShot, simulateShot, type Preview } from './sim/shot';
 import { initialState, STATION_LOSS, woundLevel } from './sim/state';
@@ -30,6 +31,7 @@ export class App {
   yaw = 0;
   pitch = 5;
   xray = true;
+  heat = false;
   section: SectionMode = 'shot';
   tank!: TankView;
   vstate!: VehicleState;
@@ -60,6 +62,7 @@ export class App {
   private topbar = h('div', { class: 'topbar' });
   private overlay = h('div', { class: 'overlay hidden' });
   private comparePanel = h('div', { class: 'panel right compare hidden' });
+  private legend = h('div', { class: 'legend hidden' });
   private tlRange!: HTMLInputElement;
   private tlTime!: HTMLSpanElement;
   private tlPlay!: HTMLButtonElement;
@@ -80,7 +83,8 @@ export class App {
     );
     this.aimMarker.renderOrder = 21;
     this.ctx.scene.add(this.aimLine, this.aimMarker);
-    this.ui.append(this.topbar, this.left, this.right, this.comparePanel, this.log, this.timeline, this.overlay);
+    this.ui.append(this.topbar, this.left, this.right, this.comparePanel, this.log, this.timeline, this.legend, this.overlay);
+    this.buildLegend();
     this.loadVehicle(this.vehicleId);
     this.bindInput();
     this.renderLeft();
@@ -104,7 +108,7 @@ export class App {
     this.vehicleId = id;
     this.tank = buildTank(this.vehicle);
     this.ctx.scene.add(this.tank.root);
-    setXray(this.tank, this.xray);
+    setXray(this.tank, this.xray, this.heat);
     this.resetDamage();
   }
 
@@ -156,6 +160,48 @@ export class App {
     else if (k === 'd') this.stepShot(1);
     else if (k === 'w' || k === 's') this.rideShot((k === 'w' ? 1 : -1) * (e.shiftKey ? 0.6 : 0.2));
     else if (k === 'r') this.resetCamera();
+    else if (k === 'h') this.toggleHeat();
+    else if (k === 'm') this.toggleMute();
+  }
+
+  toggleHeat() {
+    this.heat = !this.heat;
+    setXray(this.tank, this.xray, this.heat);
+    this.legend.classList.toggle('hidden', !this.heat);
+    this.renderLeft();
+  }
+
+  toggleMute() {
+    setMuted(!muted);
+    this.renderLeft();
+  }
+
+  private buildLegend() {
+    const grad = HEAT_STOPS.map((mm) => `#${heatColor(mm).getHexString()} ${(100 * mm) / 500}%`).join(', ');
+    this.legend.replaceChildren(
+      h('div', { class: 'ltitle' }, 'Armor (KE RHA-equivalent, 0°)'),
+      h('div', { class: 'bar', style: `background: linear-gradient(90deg, ${grad})` }),
+      h('div', { class: 'labels' }, ...HEAT_STOPS.map((mm) => h('span', {}, `${mm}`))),
+    );
+  }
+
+  /** Play sound cues for replay events crossed between the previous and current replay time. */
+  private playSounds(shot: ShotResult, from: number, to: number) {
+    const crossed = (t: number) => t > from && t <= to;
+    if (from <= 0 && to > 0) sfx.fire();
+    for (const imp of shot.impacts) {
+      if (!crossed(imp.t)) continue;
+      if (imp.kind === 'pen') sfx.pen();
+      else if (imp.kind === 'nonpen') sfx.nonpen();
+      else if (imp.kind === 'ricochet') sfx.ricochet();
+      else sfx.blast();
+    }
+    for (const e of shot.bigEvents) {
+      if (!crossed(e.t)) continue;
+      if (e.kind === 'detonation') sfx.detonation();
+      else if (e.kind === 'blowout') sfx.whoosh();
+      else if (e.kind === 'fire') sfx.crackle();
+    }
   }
 
   togglePlay() {
@@ -217,7 +263,7 @@ export class App {
 
   toggleXray() {
     this.xray = !this.xray;
-    setXray(this.tank, this.xray);
+    setXray(this.tank, this.xray, this.heat);
     this.renderLeft();
   }
 
@@ -570,6 +616,8 @@ export class App {
       h('div', { class: 'buttons' },
         h('button', { class: this.xray ? 'on' : '', onclick: () => this.toggleXray() }, 'X-ray [X]'),
         h('button', { class: this.section !== 'off' ? 'on' : '', onclick: () => this.cycleSection() }, `Section: ${this.section} [C]`),
+        h('button', { class: this.heat ? 'on' : '', onclick: () => this.toggleHeat() }, 'Armor map [H]'),
+        h('button', { class: muted ? '' : 'on', onclick: () => this.toggleMute() }, muted ? 'Sound off [M]' : 'Sound on [M]'),
       ),
       h('div', { class: 'hint' }, 'Drag to orbit · click armor to lock aim · Space to fire'),
     );
@@ -652,7 +700,9 @@ export class App {
     this.ctx.controls.update();
     const shot = this.shots[this.current];
     if (shot && this.playing) {
+      const before = this.replayT;
       this.replayT += dt * this.speed;
+      this.playSounds(shot, before === 0 ? -1 : before, this.replayT);
       if (this.replayT >= shot.duration) {
         this.replayT = shot.duration;
         this.playing = false;
@@ -664,7 +714,7 @@ export class App {
     }
     this.shotView?.update(this.replayT);
     this.updateSection();
-    this.ctx.renderer.render(this.ctx.scene, this.ctx.camera);
+    this.ctx.composer.render();
     requestAnimationFrame(this.frame);
   };
 

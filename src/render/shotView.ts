@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { checkIncapacitated } from '../sim/state';
 import type { CrewZoneId, ShotResult, TraceKind } from '../sim/types';
+import { Burst } from './particles';
 import { boxCenter, moduleColor, type TankView } from './tank';
 
 const TRACE_COLORS: Record<TraceKind, THREE.Color> = {
@@ -22,6 +23,7 @@ export class ShotView {
   private markers: THREE.Mesh[] = [];
   private wounds: THREE.Mesh[] = [];
   private fx: { kind: string; t: number; obj: THREE.Object3D }[] = [];
+  private bursts: { t: number; b: Burst }[] = [];
 
   constructor(readonly view: TankView, readonly shot: ShotResult) {
     const n = shot.traces.length;
@@ -60,6 +62,7 @@ export class ShotView {
     }
     this.buildWounds();
     this.buildBigEvents();
+    this.buildParticles();
     for (const imp of shot.impacts) {
       if (imp.kind !== 'explode' && imp.kind !== 'scab' && imp.kind !== 'era') continue;
       const blast = new THREE.Mesh(
@@ -108,6 +111,35 @@ export class ShotView {
         const g = new THREE.Group();
         g.add(light, glow);
         this.add('fire', e.t, g);
+      }
+    }
+  }
+
+  private burst(t: number, at: { x: number; y: number; z: number }, o: ConstructorParameters<typeof Burst>[1]) {
+    const b = new Burst(new THREE.Vector3(at.x, at.y, at.z), o, this.bursts.length * 97 + this.shot.input.seed % 1000);
+    this.bursts.push({ t, b });
+    this.group.add(b.points);
+  }
+
+  private buildParticles() {
+    for (const imp of this.shot.impacts) {
+      if (imp.kind === 'pen' || imp.kind === 'nonpen' || imp.kind === 'ricochet') {
+        this.burst(imp.t, imp.point, { count: imp.kind === 'pen' ? 26 : 18, color: 0xffb050, speed: 2.2, lift: -3, size: 0.05, grow: -0.5, life: 0.6, additive: true });
+      }
+      if (imp.kind === 'explode' || imp.kind === 'scab' || imp.kind === 'era') {
+        this.burst(imp.t, imp.point, { count: 30, color: 0xffa040, speed: 3, lift: -2, size: 0.06, grow: -0.5, life: 0.5, additive: true });
+        this.burst(imp.t + 0.05, imp.point, { count: 26, color: 0x5a5a58, speed: 1.2, lift: 0.6, size: 0.5, grow: 2.5, life: 3, additive: false });
+      }
+    }
+    for (const e of this.shot.bigEvents) {
+      if (e.kind === 'detonation') {
+        this.burst(e.t, e.point, { count: 90, color: 0xffc070, speed: 9, lift: -6, size: 0.09, grow: -0.4, life: 1.6, additive: true });
+        this.burst(e.t + 0.1, e.point, { count: 70, color: 0x2e2c2a, speed: 3.5, lift: 1.4, size: 1.2, grow: 3, life: 5, additive: false });
+      } else if (e.kind === 'blowout') {
+        this.burst(e.t, e.point, { count: 60, color: 0xffa040, speed: 7, lift: 2, size: 0.12, grow: 0.5, life: 1.8, additive: true, spread: new THREE.Vector3(0.25, 2.2, 0.25) });
+        this.burst(e.t + 0.3, e.point, { count: 50, color: 0x3a3836, speed: 3, lift: 1.5, size: 0.9, grow: 3, life: 5, additive: false, spread: new THREE.Vector3(0.4, 1.6, 0.4) });
+      } else if (e.kind === 'fire') {
+        this.burst(e.t, e.point, { count: 40, color: 0x444240, speed: 0.8, lift: 0.9, size: 0.6, grow: 3, life: 6, additive: false, spread: new THREE.Vector3(0.6, 1, 0.6) });
       }
     }
   }
@@ -222,6 +254,7 @@ export class ShotView {
     }
     applyDamage(this.view, this.shot, T);
     this.updateBigEvents(T);
+    for (const { t, b } of this.bursts) b.update(T - t);
   }
 
   dispose() {

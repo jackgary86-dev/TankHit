@@ -142,3 +142,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #15181c; }
 .cmp .bad { color: var(--bad); } .cmp .warn { color: var(--warn); } .cmp .ok { color: var(--good); } .cmp .muted { color: var(--muted); }
 .starset i { font-style: normal; color: var(--muted); opacity: 0.6; }
 .starset i.full { color: var(--accent); opacity: 1; }
+
+.legend { position: absolute; right: 12px; bottom: 12px; width: 280px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 11px; }
+.legend .ltitle { color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.6px; font-size: 10px; }
+.legend .bar { height: 10px; border-radius: 3px; }
+.legend .labels { display: flex; justify-content: space-between; margin-top: 3px; color: var(--muted); font-variant-numeric: tabular-nums; }
