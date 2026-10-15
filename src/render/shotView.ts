@@ -250,9 +250,15 @@ export class ShotView {
     for (const w of this.wounds) {
       const age = T - (w.userData.t as number);
       w.visible = age >= 0;
+      // The channel lengthens along the fragment path, while the gel around it balloons into a temporary
+      // cavity (up to ~3x the radius) that collapses back over half a second, leaving the permanent track.
       const grow = Math.min(1, Math.max(0.05, age / 0.25));
-      w.scale.set(1, grow, 1);
-      (w.material as THREE.MeshBasicMaterial).opacity = age < 0.4 ? 1 : 0.7;
+      const pulse = age < 0.12 ? age / 0.12 : Math.max(0, 1 - (age - 0.12) / 0.55);
+      const swell = 1 + 2.2 * pulse;
+      w.scale.set(swell, grow, swell);
+      const mat = w.material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.35 + 0.65 * (1 - pulse) * (age < 0.4 ? 1 : 0.7) + 0.2 * pulse;
+      mat.color.setRGB(1, 0.33 + 0.4 * pulse, 0.19 + 0.3 * pulse);
     }
     applyDamage(this.view, this.shot, T);
     this.updateBigEvents(T);

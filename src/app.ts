@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FAMILIES, ROUNDS, roundById } from './data/rounds';
 import { VEHICLES, vehicleById } from './data/vehicles';
+import { DamageDecals } from './render/decals';
 import { GunnerView } from './render/gunner';
 import { KillOverlay, killColor } from './render/killOverlay';
 import { createScene, type SceneCtx } from './render/scene';
@@ -42,6 +43,9 @@ export class App {
   heat = false;
   killMap = false;
   gunner = new GunnerView();
+  decals!: DamageDecals;
+  autoCam = true;
+  private camGoal: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
   private gunnerPickT = 0;
   private killWorker: Worker | null = null;
   private killOverlay = new KillOverlay();
@@ -128,6 +132,7 @@ export class App {
     this.shotView = null;
     this.vehicleId = id;
     this.tank = buildTank(this.vehicle);
+    this.decals = new DamageDecals(this.tank);
     this.ctx.scene.add(this.tank.root);
     setXray(this.tank, this.xray, this.heat);
     this.resetDamage();
@@ -135,6 +140,7 @@ export class App {
 
   resetDamage() {
     this.vstate = initialState(this.vehicle);
+    this.decals?.clear();
     this.challengeResult = this.challenge ? { status: 'active', stars: 0 } : null;
     this.comparePanel.classList.add('hidden');
     this.shots = [];
@@ -151,7 +157,10 @@ export class App {
 
   private bindInput() {
     const el = this.ctx.renderer.domElement;
-    el.addEventListener('pointerdown', (e) => (this.downAt = { x: e.clientX, y: e.clientY }));
+    el.addEventListener('pointerdown', (e) => {
+      this.downAt = { x: e.clientX, y: e.clientY };
+      this.camGoal = null;
+    });
     let last = { x: 0, y: 0 };
     el.addEventListener('pointermove', (e) => {
       if (this.gunner.active) {
@@ -198,6 +207,7 @@ export class App {
     else if (k === 'h') this.toggleHeat();
     else if (k === 'k') this.toggleKillMap();
     else if (k === 'g') this.toggleGunner();
+    else if (k === 'v') this.toggleAutoCam();
     else if (k === 'q' || k === 'e') this.setTurretYaw(this.turretYaw + (k === 'e' ? 5 : -5));
     else if (k === 'm') this.toggleMute();
   }
@@ -313,6 +323,49 @@ export class App {
     }
   }
 
+  // ------------------------------------------------------------ auto camera
+
+  toggleAutoCam() {
+    this.autoCam = !this.autoCam;
+    if (!this.autoCam) this.camGoal = null;
+    this.renderLeft();
+  }
+
+  /** Pick a three-quarter view of the first impact, looking along the shot, from the side away from the hull interior. */
+  private frameImpact(shot: ShotResult) {
+    const imp = shot.impacts[0];
+    const d = new THREE.Vector3(shot.input.dir.x, shot.input.dir.y, shot.input.dir.z).normalize();
+    const p = imp ? new THREE.Vector3(imp.point.x, imp.point.y, imp.point.z) : new THREE.Vector3(shot.input.origin.x, shot.input.origin.y, shot.input.origin.z).addScaledVector(d, 6);
+    const side = new THREE.Vector3().crossVectors(d, new THREE.Vector3(0, 1, 0)).normalize();
+    // Keep the camera on whichever side it is already on so the cut does not flip the view.
+    const cur = this.ctx.camera.position.clone().sub(p);
+    if (cur.dot(side) < 0) side.negate();
+    const pos = p.clone().addScaledVector(d, -2.6).addScaledVector(side, 3.2).add(new THREE.Vector3(0, 1.9, 0));
+    this.camGoal = { pos, target: p.clone() };
+    this.ride = -1;
+  }
+
+  /** Ease toward the framing goal and, while playing, follow the penetrator head. */
+  private updateAutoCam() {
+    if (!this.autoCam || !this.camGoal || this.gunner.active) return;
+    const shot = this.shots[this.current];
+    const goal = this.camGoal;
+    if (shot && this.playing) {
+      const head = shot.traces.find((t) => (t.kind === 'shell' || t.kind === 'jet') && this.replayT >= t.t0 && this.replayT <= t.t1);
+      const imp = shot.impacts[0];
+      if (head && imp) {
+        const k = (this.replayT - head.t0) / Math.max(head.t1 - head.t0, 1e-6);
+        const hp = new THREE.Vector3(head.from.x + (head.to.x - head.from.x) * k, head.from.y + (head.to.y - head.from.y) * k, head.from.z + (head.to.z - head.from.z) * k);
+        // Keep the impact in frame: follow the head only within a metre of where it strikes.
+        const ip = new THREE.Vector3(imp.point.x, imp.point.y, imp.point.z);
+        goal.target.copy(ip).add(hp.sub(ip).clampLength(0, 1.0));
+      }
+    }
+    this.ctx.camera.position.lerp(goal.pos, 0.08);
+    this.ctx.controls.target.lerp(goal.target, 0.12);
+    if (this.ctx.camera.position.distanceTo(goal.pos) < 0.02 && !this.playing) this.camGoal = null;
+  }
+
   toggleHeat() {
     this.heat = !this.heat;
     setXray(this.tank, this.xray, this.heat);
@@ -371,6 +424,7 @@ export class App {
 
   resetCamera() {
     this.ride = -1;
+    this.camGoal = null;
     this.ctx.camera.position.set(7.5, 4.5, 7.5);
     this.ctx.controls.target.set(0, 1.1, 0);
   }
@@ -389,6 +443,7 @@ export class App {
 
   /** Move the camera along the shot path (W/S). */
   rideShot(delta: number) {
+    this.camGoal = null;
     const pts = this.shellPath();
     if (pts.length < 2) return;
     const lens = pts.slice(1).map((p, i) => p.distanceTo(pts[i]));
@@ -505,6 +560,7 @@ export class App {
     const shot = simulateShot(this.vehicle, this.round, input, this.vstate);
     this.vstate = shot.stateAfter;
     this.shots.push(shot);
+    this.decals.addFromShot(shot);
     this.showShot(0, true);
     this.renderLeft();
     // Frame the impact.
@@ -686,6 +742,7 @@ export class App {
     }
     this.vstate = shot.stateAfter;
     this.shots.push(shot);
+    this.decals.addFromShot(shot);
     if (this.challenge) {
       this.challengeResult = evaluateChallenge(this.challenge, this.vehicle, this.vstate, this.shots);
       if (this.challengeResult.status === 'won') saveStars(this.challenge.id, this.challengeResult.stars);
@@ -705,6 +762,7 @@ export class App {
     this.replayT = play ? 0 : shot.duration;
     this.playing = play;
     this.ride = -1;
+    if (play && this.autoCam) this.frameImpact(shot);
     this.renderRight();
     this.renderTimeline();
     this.renderLog();
@@ -865,6 +923,7 @@ export class App {
         h('button', { class: this.heat ? 'on' : '', onclick: () => this.toggleHeat() }, 'Armor map [H]'),
         h('button', { class: this.killMap ? 'on' : '', onclick: () => this.toggleKillMap() }, 'Kill map [K]'),
         h('button', { class: this.gunner.active ? 'on' : '', onclick: () => this.toggleGunner() }, "Gunner's sight [G]"),
+        h('button', { class: this.autoCam ? 'on' : '', onclick: () => this.toggleAutoCam() }, 'Auto camera [V]'),
         h('button', { class: muted ? '' : 'on', onclick: () => this.toggleMute() }, muted ? 'Sound off [M]' : 'Sound on [M]'),
       ),
       h('div', { class: 'hint' }, 'Drag to orbit · click armor to lock aim · Space to fire'),
@@ -953,7 +1012,10 @@ export class App {
     const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
     if (this.gunner.active) this.pollGunner(now);
-    else this.ctx.controls.update();
+    else {
+      this.updateAutoCam();
+      this.ctx.controls.update();
+    }
     const shot = this.shots[this.current];
     if (shot && this.playing) {
       const before = this.replayT;
