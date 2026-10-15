@@ -51,7 +51,7 @@ export const T34_85: Vehicle = {
     dummy('loader', 'loader', 'Loader', 'turret', v3(TX - 0.1, 1.17, -0.45), { standing: true, scale: 0.9 }),
   ],
   turretPivot: v3(TX, 0, 0),
-  racks: [rack('floor', 'Hull floor racks', 7), rack('turret', 'Turret bustle rack', 4)],
+  racks: [rack('floor', 'Hull floor racks', 9), rack('turret', 'Turret bustle rack', 4)],
   visual: {
     hullLength: 5.9, hullWidth: 2.0, trackWidth: 0.5, groundClearance: 0.4,
     wheelCount: 5, wheelRadius: 0.4,

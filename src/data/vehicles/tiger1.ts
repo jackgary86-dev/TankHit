@@ -55,7 +55,7 @@ export const TIGER_I: Vehicle = {
     dummy('loader', 'loader', 'Loader', 'turret', v3(TX - 0.1, 1.4, -0.5), { standing: true, scale: 0.9 }),
   ],
   turretPivot: v3(TX, 0, 0),
-  racks: [rack('sponson-l', 'Left sponson bins', 6), rack('sponson-r', 'Right sponson bins', 6)],
+  racks: [rack('sponson-l', 'Left sponson bins', 8), rack('sponson-r', 'Right sponson bins', 8)],
   visual: {
     hullLength: 6.3, hullWidth: 2.4, trackWidth: 0.72, groundClearance: 0.47,
     wheelCount: 8, wheelRadius: 0.4,
