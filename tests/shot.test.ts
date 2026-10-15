@@ -51,3 +51,21 @@ describe('kinetic shots on T-34-85', () => {
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 });
+
+describe('spall', () => {
+  it('a penetration throws spall that damages interior modules', () => {
+    const r = roundById('m82');
+    // Side shot into the hull at fighting-compartment height.
+    const shot = simulateShot(t34, r, { vehicleId: t34.id, roundId: r.id, distance: 100, origin: v3(0.2, 0.9, 6), dir: v3(0, 0, -1), seed: 5 }, initialState(t34));
+    expect(shot.summary.penetrated).toBe(true);
+    expect(shot.summary.spallCount).toBeGreaterThan(15);
+    expect(shot.traces.filter((t) => t.kind === 'spall').length).toBe(shot.summary.spallCount);
+    expect(shot.moduleHits.length).toBeGreaterThan(0);
+  });
+
+  it('non-penetrations throw no spall', () => {
+    const r = roundById('m72');
+    const shot = simulateShot(t34, r, { vehicleId: t34.id, roundId: r.id, distance: 1500, origin: v3(8, 1.6, 0.6), dir: v3(-1, 0, 0), seed: 1 }, initialState(t34));
+    expect(shot.summary.spallCount).toBe(0);
+  });
+});

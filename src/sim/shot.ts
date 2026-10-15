@@ -15,7 +15,7 @@ import type {
   VehicleState,
   Verdict,
 } from './types';
-import { DEG, dist, dot, madd, makeRng, norm, scale, sub, type Rng, type Vec3 } from './vec';
+import { DEG, dist, dot, madd, makeRng, norm, randomInCone, scale, sub, type Rng, type Vec3 } from './vec';
 
 /** Replay-time speeds (metres per replay second). Purely visual pacing. */
 export const SPEED = { approach: 8, shell: 3, jet: 5, spall: 2.2, frag: 2.6 } as const;
@@ -176,6 +176,7 @@ export class ShotSim {
           this.penetrated = true;
           this.res.impacts.push({ t, kind: 'pen', point, normal: n, plateId: p.id, losMm: los, penMm: P + los, angleDeg: angle });
           entered = entering ? true : entered;
+          if (entering) this.spallFromPen(madd(point, dir, 0.03), dir, t, P, p.mm);
           if (!entering) {
             // Leaving the vehicle: draw a short exit tracer and stop.
             this.trace('shell', point, madd(point, dir, 3), t, SPEED.approach, P);
@@ -195,17 +196,82 @@ export class ShotSim {
     return this.finish();
   }
 
-  /** Penetrator or fragment passes through an internal module / crew zone. Returns remaining pen. */
-  hitInternal(h: HitTarget, point: Vec3, _dir: Vec3, t: number, P: number): number {
+  /** Penetrator passes through an internal module / crew zone. Returns remaining pen. */
+  hitInternal(h: HitTarget, point: Vec3, dir: Vec3, t: number, P: number): number {
     if (h.kind === 'module') {
-      const m = h.module;
-      const hp = this.state.moduleHp[m.id];
-      const dmg = Math.min(hp, 40 + P * 0.5);
-      this.state.moduleHp[m.id] = hp - dmg;
-      this.res.moduleHits.push({ t, moduleId: m.id, damage: dmg, hpAfter: hp - dmg, point });
-      return P - m.absorb;
+      this.damageModule(h.module, 60 + P * 0.3, point, t, true);
+      return P - h.module.absorb;
     }
-    return P - 3;
+    if (h.kind !== 'crew') return P;
+    this.damageCrew(h.crew, h.zone, 80 + P * 0.2, point, dir, t, 0.5);
+    return P - 4;
+  }
+
+  damageModule(m: Module, amount: number, point: Vec3, t: number, _byPenetrator: boolean) {
+    const hp = this.state.moduleHp[m.id];
+    if (hp <= 0 && !m.ammo) return;
+    const dmg = Math.min(Math.max(hp, 0), amount);
+    this.state.moduleHp[m.id] = hp - dmg;
+    this.res.moduleHits.push({ t, moduleId: m.id, damage: dmg, hpAfter: hp - dmg, point });
+  }
+
+  damageCrew(_c: Crew, _z: CrewZone, _amount: number, _point: Vec3, _dir: Vec3, _t: number, _len: number) {
+    // Crew wounds are modelled in the gel dummy system.
+  }
+
+  /** Spall cone thrown off the inside face after a penetration. */
+  spallFromPen(exit: Vec3, dir: Vec3, t: number, residual: number, plateMm: number) {
+    const r = this.r;
+    const resF = 0.6 + Math.min(1, residual / 200) * 0.6;
+    let count: number, half: number, energy: number;
+    switch (r.family) {
+      case 'APFSDS':
+        count = 18 + residual / 12; half = 16; energy = 38; break;
+      case 'AP':
+        count = 22 + r.caliber / 4 + residual / 8; half = 24; energy = 46; break;
+      case 'APHE':
+        count = 14 + r.caliber / 6 + residual / 12; half = 22; energy = 40; break;
+      case 'HEAT':
+        count = 12 + residual / 15; half = 10; energy = 52; break;
+      default:
+        count = 20; half = 30; energy = 35;
+    }
+    count *= 0.7 + Math.min(plateMm, 150) / 250; // thicker plates throw more spall
+    this.emitFragments(exit, dir, t, Math.min(70, Math.round(count)), half, energy * resF, 'spall');
+  }
+
+  /** Emit `count` fragments in a cone (half-angle deg; 180 = sphere) and trace each through the interior. */
+  emitFragments(origin: Vec3, axis: Vec3, t0: number, count: number, halfDeg: number, energy: number, kind: 'spall' | 'frag') {
+    const speed = kind === 'spall' ? SPEED.spall : SPEED.frag;
+    for (let i = 0; i < count; i++) {
+      const d = randomInCone(axis, halfDeg * DEG, this.rng);
+      let E = energy * (0.55 + this.rng() * 0.9);
+      const range = 1.5 + E / 18;
+      const hits = collectHits(this.v, this.state, origin, d, { maxT: range });
+      let end = madd(origin, d, range);
+      for (const h of hits) {
+        const p = madd(origin, d, h.t);
+        const th = t0 + h.t / speed;
+        if (h.kind === 'plate') {
+          end = p;
+          E = 0;
+          break;
+        }
+        if (h.kind === 'module') {
+          this.damageModule(h.module, E * 0.6, p, th, false);
+          E -= h.module.absorb * 1.5;
+        } else {
+          this.damageCrew(h.crew, h.zone, E * 0.7, p, d, th, Math.min(0.35, 0.05 + E / 250));
+          E -= 25;
+        }
+        if (E <= 4) {
+          end = p;
+          break;
+        }
+      }
+      this.trace(kind, origin, end, t0, speed, energy);
+      this.spallCount++;
+    }
   }
 
   finish(): ShotResult {

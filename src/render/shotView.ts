@@ -69,7 +69,7 @@ export class ShotView {
       if (T >= tr.t0) {
         k = tr.t1 > tr.t0 ? Math.min(1, (T - tr.t0) / (tr.t1 - tr.t0)) : 1;
         const age = T - tr.t1;
-        bright = age <= 0 ? 1 : Math.max(0.12, 1 - age / FADE);
+        bright = age <= 0 ? 1 : Math.max(0.3, 1 - age / FADE);
       }
       const ex = tr.from.x + (tr.to.x - tr.from.x) * k;
       const ey = tr.from.y + (tr.to.y - tr.from.y) * k;
