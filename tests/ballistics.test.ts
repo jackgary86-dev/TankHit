@@ -40,3 +40,15 @@ describe('ballistics', () => {
     expect(dispersionMils(roundById('m829a1'))).toBeLessThan(dispersionMils(roundById('of471')));
   });
 });
+
+describe('range estimation error', () => {
+  it('is seeded, small and clamped', async () => {
+    const { estimatedRangeError } = await import('../src/sim/ballistics');
+    const errs = Array.from({ length: 500 }, (_, i) => estimatedRangeError(i * 7919 + 13));
+    expect(estimatedRangeError(42)).toBe(estimatedRangeError(42));
+    for (const e of errs) expect(Math.abs(e)).toBeLessThanOrEqual(0.07);
+    const mean = errs.reduce((a, b) => a + b, 0) / errs.length;
+    expect(Math.abs(mean)).toBeLessThan(0.01);
+    expect(errs.some((e) => Math.abs(e) > 0.02)).toBe(true);
+  });
+});

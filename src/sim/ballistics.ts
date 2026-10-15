@@ -116,5 +116,16 @@ export function dispersionMils(r: Round): number {
   }
 }
 
+/**
+ * Range-estimation error for modes where the displayed range is only an estimate: the true range differs by a
+ * seeded few percent (sigma 3 %, clamped to 7 %), which changes drop and kinetic penetration.
+ */
+export function estimatedRangeError(seed: number): number {
+  const u1 = ((seed * 1103515245 + 12345) >>> 0) / 4294967296;
+  const u2 = ((seed * 22695477 + 1) >>> 0) / 4294967296;
+  const g = gaussian(Math.max(u1, 1e-6), u2);
+  return Math.max(-0.07, Math.min(0.07, g * 0.03));
+}
+
 /** Standard normal sample from two uniforms. */
 export const gaussian = (u1: number, u2: number) => Math.sqrt(-2 * Math.log(Math.max(u1, 1e-12))) * Math.cos(2 * Math.PI * u2);

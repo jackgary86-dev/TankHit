@@ -54,6 +54,8 @@ export class App {
   spent!: SpentRounds;
   caps!: SectionCaps;
   autoCam = true;
+  /** Sandbox only: shots land exactly where aimed (analysis). Off, and in every other mode, dispersion applies. */
+  perfectAim = true;
   camGoal: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
   lastAtMuzzle = false;
   gunnerPickT = 0;

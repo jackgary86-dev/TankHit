@@ -99,7 +99,7 @@ export function renderLeft(app: App) {
       stat('Mass', `${r.mass} kg`),
       stat('Filler', r.filler ? `${r.filler} kg` : '—'),
     ),
-    label('Distance'),
+    label(app.challenge ? 'Distance (estimated)' : 'Distance'),
     h('div', { class: 'row' }, dist, distVal),
     label('Turret traverse [Q/E]'),
     h('div', { class: 'row' }, tur, turVal),
@@ -122,6 +122,9 @@ export function renderLeft(app: App) {
     h('div', { class: 'buttons' },
       h('button', { class: app.gunner.active ? 'on' : '', onclick: () => app.toggleGunner() }, "Gunner's sight [G]"),
       h('button', { class: app.autoCam ? 'on' : '', onclick: () => app.toggleAutoCam() }, 'Auto camera [V]'),
+      app.mode === 'sandbox' && !app.challenge
+        ? h('button', { class: app.perfectAim ? 'on' : '', title: 'Sandbox analysis: shots land exactly where aimed. Off: real dispersion.', onclick: () => { app.perfectAim = !app.perfectAim; app.renderLeft(); } }, app.perfectAim ? 'Perfect aim' : 'Dispersion on')
+        : '',
       h('button', { class: isReadableSize() ? 'on' : '', title: 'Inflate small shells for readability instead of true scale', onclick: () => app.toggleReadableSize() }, 'Readable shells'),
       h('button', { class: muted ? '' : 'on', onclick: () => app.toggleMute() }, muted ? 'Sound off [M]' : 'Sound on [M]'),
     ),

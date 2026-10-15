@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ShotView } from '../render/shotView';
-import { dispersionMils, gaussian } from '../sim/ballistics';
+import { dispersionMils, estimatedRangeError, gaussian } from '../sim/ballistics';
 import { simulateShot } from '../sim/shot';
 import { makeRng, v3 } from '../sim/vec';
 import { evaluateChallenge, saveStars } from '../modes/challenges';
@@ -12,8 +12,13 @@ export function fire(app: App) {
   const a = app.aim ?? app.hover;
   if (!a) return;
   const seed = (Math.random() * 2 ** 31) | 0;
+  // Outside the sandbox the range is an estimate; the true range differs by a seeded few percent.
+  const estimated = !!app.challenge || app.mode !== 'sandbox';
+  const trueDistance = estimated ? Math.round(app.distance * (1 + estimatedRangeError(seed))) : app.distance;
   let origin = app.shotOrigin(a);
-  if (app.gunner.active) {
+  // Dispersion applies in the sight, in challenges and other modes, and in the sandbox when perfect aim is off.
+  const scatter = app.gunner.active || estimated || !app.perfectAim;
+  if (scatter) {
     // Seeded dispersion: scatter the arrival point in the plane normal to the line of fire.
     const rng = makeRng(seed ^ 0x5bd1e995);
     const sigma = dispersionMils(app.round) / 1000;
@@ -21,14 +26,14 @@ export function fire(app: App) {
     const my = gaussian(rng(), rng()) * sigma;
     const right = new THREE.Vector3().crossVectors(a.dir, new THREE.Vector3(0, 1, 0)).normalize();
     const up = new THREE.Vector3().crossVectors(right, a.dir).normalize();
-    const p = a.point.clone().addScaledVector(right, Math.tan(mx) * app.distance).addScaledVector(up, Math.tan(my) * app.distance);
+    const p = a.point.clone().addScaledVector(right, Math.tan(mx) * trueDistance).addScaledVector(up, Math.tan(my) * trueDistance);
     origin = app.shotOrigin({ point: p, dir: a.dir });
   }
   const dir = v3(a.dir.x, a.dir.y, a.dir.z);
   const shot = simulateShot(
     app.vehicle,
     app.round,
-    { vehicleId: app.vehicleId, roundId: app.roundId, distance: app.distance, origin, dir, seed, turretYaw: app.turretYaw },
+    { vehicleId: app.vehicleId, roundId: app.roundId, distance: trueDistance, origin, dir, seed, turretYaw: app.turretYaw },
     app.vstate,
   );
   if (app.gunner.active) {
