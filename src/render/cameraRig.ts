@@ -1,0 +1,89 @@
+import * as THREE from 'three';
+import type { ShotResult } from '../sim/types';
+import type { App } from '../app';
+
+export function toggleAutoCam(app: App) {
+  app.autoCam = !app.autoCam;
+  if (!app.autoCam) app.camGoal = null;
+  app.renderLeft();
+}
+
+/** Pick a three-quarter view of the first impact, looking along the shot, from the side away from the hull interior. */
+export function frameImpact(app: App, shot: ShotResult) {
+  const imp = shot.impacts[0];
+  const d = new THREE.Vector3(shot.input.dir.x, shot.input.dir.y, shot.input.dir.z).normalize();
+  const p = imp ? new THREE.Vector3(imp.point.x, imp.point.y, imp.point.z) : new THREE.Vector3(shot.input.origin.x, shot.input.origin.y, shot.input.origin.z).addScaledVector(d, 6);
+  const side = new THREE.Vector3().crossVectors(d, new THREE.Vector3(0, 1, 0)).normalize();
+  // Keep the camera on whichever side it is already on so the cut does not flip the view.
+  const cur = app.ctx.camera.position.clone().sub(p);
+  if (cur.dot(side) < 0) side.negate();
+  const pos = p.clone().addScaledVector(d, -2.6).addScaledVector(side, 3.2).add(new THREE.Vector3(0, 1.9, 0));
+  app.camGoal = { pos, target: p.clone() };
+  app.ride = -1;
+}
+
+/** Ease toward the framing goal and, while playing, follow the penetrator head. */
+export function updateAutoCam(app: App) {
+  if (!app.autoCam || !app.camGoal || app.gunner.active) return;
+  const shot = app.shots[app.current];
+  const goal = app.camGoal;
+  if (shot && app.playing) {
+    const head = shot.traces.find((t) => (t.kind === 'shell' || t.kind === 'jet') && app.replayT >= t.t0 && app.replayT <= t.t1);
+    const imp = shot.impacts[0];
+    if (head && imp) {
+      const k = (app.replayT - head.t0) / Math.max(head.t1 - head.t0, 1e-6);
+      const hp = new THREE.Vector3(head.from.x + (head.to.x - head.from.x) * k, head.from.y + (head.to.y - head.from.y) * k, head.from.z + (head.to.z - head.from.z) * k);
+      // Keep the impact in frame: follow the head only within a metre of where it strikes.
+      const ip = new THREE.Vector3(imp.point.x, imp.point.y, imp.point.z);
+      goal.target.copy(ip).add(hp.sub(ip).clampLength(0, 1.0));
+    }
+  }
+  app.ctx.camera.position.lerp(goal.pos, 0.08);
+  app.ctx.controls.target.lerp(goal.target, 0.12);
+  if (app.ctx.camera.position.distanceTo(goal.pos) < 0.02 && !app.playing) app.camGoal = null;
+}
+
+export function resetCamera(app: App) {
+  app.ride = -1;
+  app.camGoal = null;
+  app.ctx.camera.position.set(7.5, 4.5, 7.5);
+  app.ctx.controls.target.set(0, 1.1, 0);
+}
+
+/** Points along the main penetrator path of the current shot. */
+export function shellPath(app: App): THREE.Vector3[] {
+  const shot = app.shots[app.current];
+  if (!shot) return [];
+  const pts: THREE.Vector3[] = [];
+  for (const t of shot.traces.filter((x) => x.kind === 'shell' || x.kind === 'jet' || x.kind === 'ricochet')) {
+    if (!pts.length) pts.push(new THREE.Vector3(t.from.x, t.from.y, t.from.z));
+    pts.push(new THREE.Vector3(t.to.x, t.to.y, t.to.z));
+  }
+  return pts;
+}
+
+/** Move the camera along the shot path (W/S). */
+export function rideShot(app: App, delta: number) {
+  app.camGoal = null;
+  const pts = app.shellPath();
+  if (pts.length < 2) return;
+  const lens = pts.slice(1).map((p, i) => p.distanceTo(pts[i]));
+  const total = lens.reduce((a, b) => a + b, 0);
+  app.ride = Math.max(0, Math.min(total, (app.ride < 0 ? 4 : app.ride) + delta));
+  const at = (d: number) => {
+    let acc = 0;
+    for (let i = 0; i < lens.length; i++) {
+      if (acc + lens[i] >= d) return pts[i].clone().lerp(pts[i + 1], (d - acc) / Math.max(lens[i], 1e-6));
+      acc += lens[i];
+    }
+    return pts[pts.length - 1].clone();
+  };
+  const here = at(app.ride);
+  const ahead = at(Math.min(total, app.ride + 1.2));
+  const dir = ahead.clone().sub(here);
+  if (dir.lengthSq() < 1e-4) dir.copy(pts[pts.length - 1]).sub(pts[0]);
+  dir.normalize();
+  const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+  app.ctx.camera.position.copy(here).addScaledVector(dir, -1.4).addScaledVector(side, 0.7).add(new THREE.Vector3(0, 0.6, 0));
+  app.ctx.controls.target.copy(here).addScaledVector(dir, 1.2);
+}

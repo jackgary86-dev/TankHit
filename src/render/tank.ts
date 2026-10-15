@@ -289,3 +289,15 @@ function addBarrel(v: Vehicle, turret: THREE.Group, view: TankView) {
   turret.add(mesh);
   view.exterior.push(mesh);
 }
+
+/** Free every GPU resource a tank view owns (geometries, materials, including the cached X-ray/heat variants). */
+export function disposeTank(view: TankView) {
+  view.root.removeFromParent();
+  view.root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    m.geometry?.dispose?.();
+    const mats = Array.isArray(m.material) ? m.material : [m.material];
+    for (const mat of mats) (mat as THREE.Material | undefined)?.dispose?.();
+    for (const key of ['solid', 'xray', 'heat'] as const) (o.userData[key] as THREE.Material | undefined)?.dispose?.();
+  });
+}
