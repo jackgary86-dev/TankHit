@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { checkIncapacitated } from '../sim/state';
 import type { CrewZoneId, ShotResult, TraceKind } from '../sim/types';
+import { roundById } from '../data/rounds';
 import { Burst } from './particles';
+import { ProjectileView } from './projectile';
 import { boxCenter, moduleColor, type TankView } from './tank';
 
 const TRACE_COLORS: Record<TraceKind, THREE.Color> = {
@@ -24,6 +26,7 @@ export class ShotView {
   private wounds: THREE.Mesh[] = [];
   private fx: { kind: string; t: number; obj: THREE.Object3D }[] = [];
   private bursts: { t: number; b: Burst }[] = [];
+  private projectile: ProjectileView;
 
   constructor(readonly view: TankView, readonly shot: ShotResult) {
     const n = shot.traces.length;
@@ -46,6 +49,8 @@ export class ShotView {
     this.heads.renderOrder = 11;
     this.heads.frustumCulled = false;
     this.group.add(this.lines, this.heads);
+    this.projectile = new ProjectileView(roundById(shot.input.roundId), shot.traces, shot.impacts);
+    this.group.add(this.projectile.object);
 
     for (const imp of shot.impacts) {
       const color = imp.kind === 'pen' ? 0x46ff7a : imp.kind === 'nonpen' ? 0xff3b2f : imp.kind === 'ricochet' ? 0xffa040 : imp.kind === 'era' ? 0xc8ff80 : 0xffe060;
@@ -239,13 +244,14 @@ export class ShotView {
       const e = tr.kind === 'spall' || tr.kind === 'frag' ? Math.min(1, 0.35 + tr.energy / 120) : 1;
       col.setXYZ(i * 2, c.r * bright * e * 0.5, c.g * bright * e * 0.5, c.b * bright * e * 0.5);
       col.setXYZ(i * 2 + 1, c.r * bright * e, c.g * bright * e, c.b * bright * e);
-      const active = T >= tr.t0 && T <= tr.t1;
+      const active = T >= tr.t0 && T <= tr.t1 && tr.kind !== 'shell' && tr.kind !== 'ricochet';
       hpos.setXYZ(i, ex, ey, ez);
       const hb = active ? 1 : 0;
       hcol.setXYZ(i, c.r * hb, c.g * hb, c.b * hb);
     });
     pos.needsUpdate = col.needsUpdate = hpos.needsUpdate = hcol.needsUpdate = true;
 
+    this.projectile.update(T);
     for (const m of this.markers) m.visible = T >= (m.userData.t as number);
     for (const w of this.wounds) {
       const age = T - (w.userData.t as number);
@@ -266,6 +272,7 @@ export class ShotView {
   }
 
   dispose() {
+    this.projectile.dispose();
     this.group.traverse((o) => {
       const m = o as THREE.Mesh;
       m.geometry?.dispose();

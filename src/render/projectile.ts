@@ -1,0 +1,292 @@
+import * as THREE from 'three';
+import type { ImpactEvent, Round, Trace } from '../sim/types';
+
+// ------------------------------------------------------------------ pure: where is the shell at time T?
+
+export type ShellPhase = 'flight' | 'inside' | 'ricochet' | 'stopped' | 'gone';
+
+export interface ShellPose {
+  pos: THREE.Vector3;
+  /** Unit direction of travel (nose). */
+  dir: THREE.Vector3;
+  phase: ShellPhase;
+  /** Seconds since the shot started. */
+  t: number;
+  /** Fraction of penetration left, 1 at launch (drives rod erosion). */
+  remaining: number;
+  /** Seconds since the first impact (negative before it). */
+  sinceImpact: number;
+}
+
+/** Traces that carry the projectile body: the approach/interior shell path and a ricochet bounce. */
+export const bodyTraces = (traces: Trace[]) => traces.filter((t) => t.kind === 'shell' || t.kind === 'ricochet');
+
+/**
+ * Position and heading of the projectile at replay time T. The shell rides its traces in order; once the last
+ * trace ends it stays at the end point (stopped) unless it left the vehicle or was consumed.
+ */
+export function shellPoseAt(traces: Trace[], impacts: ImpactEvent[], T: number, family: Round['family']): ShellPose {
+  const body = bodyTraces(traces);
+  const first = impacts[0];
+  const sinceImpact = first ? T - first.t : -1;
+  const pen0 = first?.penMm ?? 1;
+  const pose = (p: { x: number; y: number; z: number }, d: THREE.Vector3, phase: ShellPhase, remaining: number): ShellPose => ({
+    pos: new THREE.Vector3(p.x, p.y, p.z), dir: d, phase, t: T, remaining, sinceImpact,
+  });
+  if (!body.length) return pose({ x: 0, y: -10, z: 0 }, new THREE.Vector3(1, 0, 0), 'gone', 1);
+  // HEAT: the body is consumed when the charge fires on the first plate.
+  if (family === 'HEAT' && first && T >= first.t) return pose(first.point, dirOf(body[0]), 'gone', 0);
+  for (let i = 0; i < body.length; i++) {
+    const tr = body[i];
+    if (T < tr.t0) {
+      const d = dirOf(tr);
+      return pose(tr.from, d, 'flight', 1);
+    }
+    if (T <= tr.t1 || i === body.length - 1) {
+      const k = tr.t1 > tr.t0 ? Math.min(1, (T - tr.t0) / (tr.t1 - tr.t0)) : 1;
+      const p = { x: tr.from.x + (tr.to.x - tr.from.x) * k, y: tr.from.y + (tr.to.y - tr.from.y) * k, z: tr.from.z + (tr.to.z - tr.from.z) * k };
+      const d = dirOf(tr);
+      const remaining = Math.max(0.15, Math.min(1, (tr.energy || pen0) / Math.max(pen0, 1e-6)));
+      let phase: ShellPhase = tr.kind === 'ricochet' ? 'ricochet' : first && T >= first.t ? 'inside' : 'flight';
+      if (T > tr.t1) {
+        // Past the end of the last body trace.
+        const last = impacts[impacts.length - 1];
+        const left = last && (last.kind === 'ricochet' || (tr.kind === 'shell' && i === body.length - 1 && exitedVehicle(tr, impacts)));
+        phase = left ? 'gone' : last?.kind === 'shatter' || last?.kind === 'explode' ? 'gone' : 'stopped';
+      }
+      return pose(p, d, phase, remaining);
+    }
+  }
+  return pose(body[body.length - 1].to, dirOf(body[body.length - 1]), 'stopped', 0.15);
+}
+
+const dirOf = (tr: Trace) => new THREE.Vector3(tr.to.x - tr.from.x, tr.to.y - tr.from.y, tr.to.z - tr.from.z).normalize();
+
+/** The sim draws a 3 m exit tracer when a shell leaves the far side: the last body trace is long and unobstructed. */
+function exitedVehicle(last: Trace, impacts: ImpactEvent[]): boolean {
+  const len = Math.hypot(last.to.x - last.from.x, last.to.y - last.from.y, last.to.z - last.from.z);
+  const lastImp = impacts[impacts.length - 1];
+  return len > 2.5 && lastImp?.kind === 'pen';
+}
+
+// ------------------------------------------------------------------ meshes
+
+const STEEL = () => new THREE.MeshStandardMaterial({ color: 0x8c9099, roughness: 0.35, metalness: 0.9 });
+const BRASS = () => new THREE.MeshStandardMaterial({ color: 0xb08d57, roughness: 0.4, metalness: 0.8 });
+const DARK = () => new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.6, metalness: 0.7 });
+const TUNGSTEN = () => new THREE.MeshStandardMaterial({ color: 0x6f737a, roughness: 0.3, metalness: 1.0, emissive: 0x000000 });
+
+/** Visual scale: shells are tiny next to a tank; small calibres are shown a little larger so they read at replay zoom. */
+export function visualScale(r: Round): number {
+  return r.caliber < 90 ? 1.6 : r.caliber < 110 ? 1.35 : 1.2;
+}
+
+/** Ogive (pointed nose) profile revolved around the X axis; length and radius in metres. Nose at +X. */
+function ogive(length: number, radius: number, bluntness = 0.0, segments = 24): THREE.BufferGeometry {
+  const pts: THREE.Vector2[] = [];
+  const n = 14;
+  for (let i = 0; i <= n; i++) {
+    const u = i / n; // 0 = base, 1 = nose
+    const rr = radius * Math.sqrt(1 - Math.pow(u, 2.2)) * (1 - bluntness) + radius * bluntness * (1 - u);
+    pts.push(new THREE.Vector2(Math.max(rr, radius * bluntness * 0.4), u * length));
+  }
+  const g = new THREE.LatheGeometry(pts, segments);
+  g.rotateZ(-Math.PI / 2); // lathe axis Y -> X
+  return g;
+}
+
+export interface ProjectileParts {
+  group: THREE.Group;
+  /** Rod/body mesh scaled along X as it erodes. */
+  body: THREE.Mesh;
+  /** Discarded sabot petals (APFSDS only). */
+  petals: THREE.Mesh[];
+  cap?: THREE.Mesh;
+  /** Overall length (m) at visual scale, nose at +X, base at -X. */
+  length: number;
+}
+
+/** Build a projectile for a round. The group's +X axis is the nose. */
+export function buildProjectile(r: Round): ProjectileParts {
+  const s = visualScale(r);
+  const group = new THREE.Group();
+  const petals: THREE.Mesh[] = [];
+  let body: THREE.Mesh;
+  let cap: THREE.Mesh | undefined;
+  let length: number;
+  const cal = (r.caliber / 1000) * s;
+
+  if (r.family === 'APFSDS') {
+    const L = (r.rodLength ?? 0.5) * s;
+    const D = ((r.rodDiameter ?? 25) / 1000) * s;
+    length = L;
+    const rodGeo = new THREE.CylinderGeometry(D / 2, D / 2, L * 0.85, 12);
+    rodGeo.rotateZ(-Math.PI / 2);
+    rodGeo.translate(-L * 0.075, 0, 0);
+    const tip = new THREE.ConeGeometry(D / 2, L * 0.15, 12);
+    tip.rotateZ(-Math.PI / 2);
+    tip.translate(L * 0.425, 0, 0);
+    body = new THREE.Mesh(mergeGeo([rodGeo, tip]), TUNGSTEN());
+    // Fins at the base.
+    for (let i = 0; i < 5; i++) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(L * 0.12, D * 2.2, D * 0.25), DARK());
+      fin.position.set(-L * 0.44, 0, 0);
+      fin.rotation.x = (i / 5) * Math.PI * 2;
+      fin.translateY(D * 1.1);
+      body.add(fin);
+    }
+    // Three sabot petals around the rod, discarded right after launch.
+    for (let i = 0; i < 3; i++) {
+      const petal = new THREE.Mesh(new THREE.CylinderGeometry(cal * 0.48, cal * 0.3, L * 0.4, 10, 1, true, 0, (Math.PI * 2) / 3 - 0.15), BRASS());
+      petal.geometry.rotateZ(-Math.PI / 2);
+      petal.rotation.x = (i / 3) * Math.PI * 2;
+      petal.position.set(L * 0.05, 0, 0);
+      petals.push(petal);
+      group.add(petal);
+    }
+    group.add(body);
+  } else if (r.family === 'HEAT') {
+    length = cal * 4.2;
+    const bodyGeo = new THREE.CylinderGeometry(cal / 2, cal * 0.45, length * 0.55, 20);
+    bodyGeo.rotateZ(-Math.PI / 2);
+    bodyGeo.translate(-length * 0.1, 0, 0);
+    const nose = ogive(length * 0.3, cal / 2, 0.1);
+    nose.translate(length * 0.175, 0, 0);
+    const probe = new THREE.CylinderGeometry(cal * 0.08, cal * 0.06, length * 0.2, 8);
+    probe.rotateZ(-Math.PI / 2);
+    probe.translate(length * 0.52, 0, 0);
+    body = new THREE.Mesh(mergeGeo([bodyGeo, nose, probe]), DARK());
+    for (let i = 0; i < 6; i++) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(length * 0.14, cal * 0.9, cal * 0.04), DARK());
+      fin.position.set(-length * 0.33, 0, 0);
+      fin.rotation.x = (i / 6) * Math.PI * 2;
+      fin.translateY(cal * 0.6);
+      body.add(fin);
+    }
+    group.add(body);
+  } else {
+    // Full-calibre shot: AP / APHE / HESH / HE. Driving band + ogive; APCBC gets a ballistic cap.
+    const blunt = r.family === 'HESH' ? 0.55 : r.family === 'HE' ? 0.25 : 0.05;
+    length = cal * (r.family === 'HESH' ? 3.2 : 3.6);
+    const base = new THREE.CylinderGeometry(cal / 2, cal / 2, length * 0.45, 24);
+    base.rotateZ(-Math.PI / 2);
+    base.translate(-length * 0.275, 0, 0);
+    const nose = ogive(length * 0.55, cal / 2, blunt);
+    nose.translate(-length * 0.05, 0, 0);
+    body = new THREE.Mesh(mergeGeo([base, nose]), r.family === 'HE' || r.family === 'HESH' ? DARK() : STEEL());
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(cal * 0.52, cal * 0.52, cal * 0.18, 24), BRASS());
+    band.rotation.z = -Math.PI / 2;
+    band.position.set(-length * 0.38, 0, 0);
+    body.add(band);
+    if (r.capped) {
+      cap = new THREE.Mesh(ogive(length * 0.32, cal * 0.42, 0.02), DARK());
+      cap.position.set(length * 0.2, 0, 0);
+      group.add(cap);
+    }
+    group.add(body);
+  }
+  group.traverse((o) => {
+    o.castShadow = false;
+    (o as THREE.Mesh).renderOrder = 15;
+  });
+  return { group, body, petals, cap, length };
+}
+
+function mergeGeo(gs: THREE.BufferGeometry[]): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const nor: number[] = [];
+  for (const g0 of gs) {
+    const g = g0.index ? g0.toNonIndexed() : g0;
+    pos.push(...(g.getAttribute('position').array as Float32Array));
+    nor.push(...(g.getAttribute('normal').array as Float32Array));
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  return out;
+}
+
+// ------------------------------------------------------------------ animated view
+
+const UP = new THREE.Vector3(0, 1, 0);
+const SABOT_T = 0.12; // replay seconds after launch when the petals peel away
+
+/** Drives a projectile mesh along a shot's traces; everything is a function of replay time. */
+export class ProjectileView {
+  readonly parts: ProjectileParts;
+  private glow: THREE.PointLight;
+  private tumbleAxis = new THREE.Vector3(0.3, 1, 0.2).normalize();
+
+  constructor(readonly round: Round, readonly traces: Trace[], readonly impacts: ImpactEvent[]) {
+    this.parts = buildProjectile(round);
+    this.glow = new THREE.PointLight(0xff8a40, 0, 0.5, 2);
+    this.parts.group.add(this.glow);
+  }
+
+  get object() {
+    return this.parts.group;
+  }
+
+  update(T: number) {
+    const p = shellPoseAt(this.traces, this.impacts, T, this.round.family);
+    const g = this.parts.group;
+    g.visible = p.phase !== 'gone' && T >= 0;
+    if (!g.visible) return;
+    g.position.copy(p.pos);
+    g.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), p.dir);
+    const launchT = bodyTraces(this.traces)[0]?.t0 ?? 0;
+    const sinceLaunch = T - launchT;
+    const sinceLaunchBody = Math.max(0, sinceLaunch);
+    // Spin-stabilised shot rotates about its axis; rods do not.
+    if (this.round.family !== 'APFSDS' && this.round.family !== 'HEAT') g.rotateX(sinceLaunchBody * 40);
+    // Ricochets tumble end over end.
+    if (p.phase === 'ricochet') g.rotateOnAxis(this.tumbleAxis, p.sinceImpact * 18);
+
+    // Rod erosion inside the target: shorten from the nose and heat the tip.
+    const body = this.parts.body;
+    if (this.round.family === 'APFSDS') {
+      const k = p.phase === 'inside' || p.phase === 'stopped' ? p.remaining : 1;
+      body.scale.set(k, 1, 1);
+      body.position.x = -this.parts.length * 0.5 * (1 - k);
+      const mat = body.material as THREE.MeshStandardMaterial;
+      const heat = p.sinceImpact >= 0 ? Math.max(0, 1 - p.sinceImpact / 1.5) : 0;
+      mat.emissive.setRGB(heat, heat * 0.35, heat * 0.05);
+      this.glow.intensity = heat * 0.5;
+    } else {
+      const mat = body.material as THREE.MeshStandardMaterial;
+      const heat = p.sinceImpact >= 0 ? Math.max(0, 0.6 - p.sinceImpact / 1.2) : 0;
+      mat.emissive.setRGB(heat, heat * 0.4, heat * 0.08);
+      this.glow.intensity = heat * 0.35;
+    }
+    // Ballistic cap is stripped on the first plate.
+    if (this.parts.cap) this.parts.cap.visible = p.sinceImpact < 0;
+
+    // Sabot petals peel outward and fall behind after launch.
+    for (let i = 0; i < this.parts.petals.length; i++) {
+      const petal = this.parts.petals[i];
+      const a = sinceLaunch - SABOT_T;
+      petal.visible = a < 1.2;
+      if (a <= 0) {
+        petal.position.set(this.parts.length * 0.05, 0, 0);
+        petal.rotation.set((i / 3) * Math.PI * 2, 0, 0);
+        continue;
+      }
+      // Local frame: +X nose. Petals swing out radially and lag behind.
+      const ang = (i / 3) * Math.PI * 2;
+      const radial = new THREE.Vector3(0, Math.cos(ang), Math.sin(ang));
+      petal.position.copy(radial.multiplyScalar(a * 1.6)).add(new THREE.Vector3(-a * 2.2, -a * a * 2.0, 0));
+      petal.rotation.set(ang, 0, -a * 4);
+    }
+  }
+
+  dispose() {
+    this.parts.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      m.geometry?.dispose?.();
+      (m.material as THREE.Material | undefined)?.dispose?.();
+    });
+    this.parts.group.removeFromParent();
+  }
+}
+
+export { UP };
