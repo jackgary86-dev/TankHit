@@ -16,6 +16,10 @@ export interface ShellPose {
   remaining: number;
   /** Seconds since the first impact (negative before it). */
   sinceImpact: number;
+  /** Metres travelled along the current trace (resets at a bounce). */
+  along: number;
+  /** Kind of the trace being ridden. */
+  traceKind: Trace['kind'];
 }
 
 /** Traces that carry the projectile body: the approach/interior shell path and a ricochet bounce. */
@@ -30,8 +34,8 @@ export function shellPoseAt(traces: Trace[], impacts: ImpactEvent[], T: number, 
   const first = impacts[0];
   const sinceImpact = first ? T - first.t : -1;
   const pen0 = first?.penMm ?? 1;
-  const pose = (p: { x: number; y: number; z: number }, d: THREE.Vector3, phase: ShellPhase, remaining: number): ShellPose => ({
-    pos: new THREE.Vector3(p.x, p.y, p.z), dir: d, phase, t: T, remaining, sinceImpact,
+  const pose = (p: { x: number; y: number; z: number }, d: THREE.Vector3, phase: ShellPhase, remaining: number, along = 0, traceKind: Trace['kind'] = 'shell'): ShellPose => ({
+    pos: new THREE.Vector3(p.x, p.y, p.z), dir: d, phase, t: T, remaining, sinceImpact, along, traceKind,
   });
   if (!body.length) return pose({ x: 0, y: -10, z: 0 }, new THREE.Vector3(1, 0, 0), 'gone', 1);
   // HEAT: the body is consumed when the charge fires on the first plate.
@@ -46,6 +50,7 @@ export function shellPoseAt(traces: Trace[], impacts: ImpactEvent[], T: number, 
       const k = tr.t1 > tr.t0 ? Math.min(1, (T - tr.t0) / (tr.t1 - tr.t0)) : 1;
       const p = { x: tr.from.x + (tr.to.x - tr.from.x) * k, y: tr.from.y + (tr.to.y - tr.from.y) * k, z: tr.from.z + (tr.to.z - tr.from.z) * k };
       const d = dirOf(tr);
+      const along = k * Math.hypot(tr.to.x - tr.from.x, tr.to.y - tr.from.y, tr.to.z - tr.from.z);
       const remaining = Math.max(0.15, Math.min(1, (tr.energy || pen0) / Math.max(pen0, 1e-6)));
       let phase: ShellPhase = tr.kind === 'ricochet' ? 'ricochet' : first && T >= first.t ? 'inside' : 'flight';
       if (T > tr.t1) {
@@ -54,7 +59,7 @@ export function shellPoseAt(traces: Trace[], impacts: ImpactEvent[], T: number, 
         const left = last && (last.kind === 'ricochet' || (tr.kind === 'shell' && i === body.length - 1 && exitedVehicle(tr, impacts)));
         phase = left ? 'gone' : last?.kind === 'shatter' || last?.kind === 'explode' ? 'gone' : 'stopped';
       }
-      return pose(p, d, phase, remaining);
+      return pose(p, d, phase, remaining, along, tr.kind);
     }
   }
   return pose(body[body.length - 1].to, dirOf(body[body.length - 1]), 'stopped', 0.15);
@@ -215,12 +220,20 @@ const SABOT_T = 0.12; // replay seconds after launch when the petals peel away
 export class ProjectileView {
   readonly parts: ProjectileParts;
   private glow: THREE.PointLight;
+  private trail: THREE.Mesh;
   private tumbleAxis = new THREE.Vector3(0.3, 1, 0.2).normalize();
 
   constructor(readonly round: Round, readonly traces: Trace[], readonly impacts: ImpactEvent[]) {
     this.parts = buildProjectile(round);
     this.glow = new THREE.PointLight(0xff8a40, 0, 0.5, 2);
     this.parts.group.add(this.glow);
+    // Fading ribbon behind the nose: a unit cone along -X, scaled to the recent path each frame.
+    const cone = new THREE.ConeGeometry(1, 1, 10, 1, true);
+    cone.rotateZ(Math.PI / 2); // tip toward +X (the shell), base trailing behind
+    cone.translate(-0.5, 0, 0);
+    this.trail = new THREE.Mesh(cone, new THREE.MeshBasicMaterial({ color: 0xff4a2a, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    this.trail.renderOrder = 14;
+    this.parts.group.add(this.trail);
   }
 
   get object() {
@@ -237,6 +250,17 @@ export class ProjectileView {
     const launchT = bodyTraces(this.traces)[0]?.t0 ?? 0;
     const sinceLaunch = T - launchT;
     const sinceLaunchBody = Math.max(0, sinceLaunch);
+    // Trail: up to half a metre of the path just flown, thinner and dimmer as it ages; none while sitting still.
+    const trailLen = p.phase === 'stopped' ? 0 : Math.min(0.5, p.along);
+    this.trail.visible = trailLen > 0.02;
+    if (this.trail.visible) {
+      const r = (this.round.caliber / 1000) * 0.45;
+      this.trail.scale.set(trailLen, r, r);
+      this.trail.position.x = -this.parts.length * 0.5;
+      const tm = this.trail.material as THREE.MeshBasicMaterial;
+      tm.color.setHex(p.traceKind === 'ricochet' ? 0xffa040 : p.phase === 'inside' ? 0xffc080 : 0xff4a2a);
+      tm.opacity = 0.55 * (trailLen / 0.5);
+    }
     // Spin-stabilised shot rotates about its axis; rods do not.
     if (this.round.family !== 'APFSDS' && this.round.family !== 'HEAT') g.rotateX(sinceLaunchBody * 40);
     // Ricochets tumble end over end.
