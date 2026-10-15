@@ -1,5 +1,7 @@
 # TankHit
 
+**Play it:** https://jackgary86-dev.github.io/TankHit/
+
 Armor penetration sandbox. Pick a tank, a round and an angle, fire, then watch an X-ray cutaway replay of the penetrator, spall, ballistic-gel crew dummies and ammunition cook-off.
 
 ```bash
