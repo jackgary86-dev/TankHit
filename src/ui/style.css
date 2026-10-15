@@ -147,3 +147,6 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #15181c; }
 .legend .ltitle { color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.6px; font-size: 10px; }
 .legend .bar { height: 10px; border-radius: 3px; }
 .legend .labels { display: flex; justify-content: space-between; margin-top: 3px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.legend.kill { bottom: 86px; }
+.killstatus { position: absolute; right: 12px; bottom: 160px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 10px; font-size: 11px; color: var(--accent); }

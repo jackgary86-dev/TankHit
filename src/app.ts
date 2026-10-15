@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import { FAMILIES, ROUNDS, roundById } from './data/rounds';
 import { VEHICLES, vehicleById } from './data/vehicles';
+import { KillOverlay, killColor } from './render/killOverlay';
 import { createScene, type SceneCtx } from './render/scene';
+import { killProbability } from './sim/killmap';
+import type { KillMapMessage, KillMapRequest } from './sim/killmap.worker';
 import { ShotView, applyDamage } from './render/shotView';
 import { buildTank, setTurretYaw, type TankView } from './render/tank';
 import { muted, setMuted, sfx } from './render/audio';
@@ -33,6 +36,14 @@ export class App {
   turretYaw = 0;
   xray = true;
   heat = false;
+  killMap = false;
+  private killWorker: Worker | null = null;
+  private killOverlay = new KillOverlay();
+  private killReq = 0;
+  private killSig = '';
+  private killTimer = 0;
+  private killStatus = h('div', { class: 'killstatus hidden' });
+  private killLegend = h('div', { class: 'legend kill hidden' });
   section: SectionMode = 'shot';
   tank!: TankView;
   vstate!: VehicleState;
@@ -84,8 +95,9 @@ export class App {
     );
     this.aimMarker.renderOrder = 21;
     this.ctx.scene.add(this.aimLine, this.aimMarker);
-    this.ui.append(this.topbar, this.left, this.right, this.comparePanel, this.log, this.timeline, this.legend, this.overlay);
+    this.ui.append(this.topbar, this.left, this.right, this.comparePanel, this.log, this.timeline, this.legend, this.killLegend, this.killStatus, this.overlay);
     this.buildLegend();
+    this.ctx.scene.add(this.killOverlay.group);
     this.loadVehicle(this.vehicleId);
     this.bindInput();
     this.renderLeft();
@@ -162,6 +174,7 @@ export class App {
     else if (k === 'w' || k === 's') this.rideShot((k === 'w' ? 1 : -1) * (e.shiftKey ? 0.6 : 0.2));
     else if (k === 'r') this.resetCamera();
     else if (k === 'h') this.toggleHeat();
+    else if (k === 'k') this.toggleKillMap();
     else if (k === 'q' || k === 'e') this.setTurretYaw(this.turretYaw + (k === 'e' ? 5 : -5));
     else if (k === 'm') this.toggleMute();
   }
@@ -177,6 +190,68 @@ export class App {
     }
   }
 
+  // ------------------------------------------------------------ kill-probability map
+
+  toggleKillMap() {
+    this.killMap = !this.killMap;
+    this.killLegend.classList.toggle('hidden', !this.killMap);
+    if (!this.killMap) {
+      this.killOverlay.clear();
+      this.killStatus.classList.add('hidden');
+      this.killSig = '';
+    }
+    this.renderLeft();
+  }
+
+  /** Direction shots travel for the map: the camera's line of sight, or the manual yaw/pitch. */
+  private mapDir(): THREE.Vector3 {
+    if (!this.respectCamera) return this.shotDir(new THREE.Vector3());
+    return this.ctx.controls.target.clone().sub(this.ctx.camera.position).normalize();
+  }
+
+  /** Re-run the map whenever anything it depends on changes (debounced). */
+  private pollKillMap() {
+    if (!this.killMap) return;
+    const d = this.mapDir();
+    const q = (x: number) => Math.round(x * 12);
+    const sig = [this.vehicleId, this.roundId, this.distance, this.turretYaw, this.shots.length, this.mode, q(d.x), q(d.y), q(d.z)].join('|');
+    if (sig === this.killSig) return;
+    this.killSig = sig;
+    clearTimeout(this.killTimer);
+    this.killTimer = window.setTimeout(() => this.requestKillMap(d), 350);
+  }
+
+  private requestKillMap(dir: THREE.Vector3) {
+    if (!this.killWorker) {
+      this.killWorker = new Worker(new URL('./sim/killmap.worker.ts', import.meta.url), { type: 'module' });
+      this.killWorker.onmessage = (e: MessageEvent<KillMapMessage>) => this.onKillMessage(e.data);
+    }
+    const id = ++this.killReq;
+    const req: KillMapRequest = {
+      id, vehicleId: this.vehicleId, roundId: this.roundId, distance: this.distance, yawDeg: this.turretYaw,
+      state: structuredClone(this.vstate), dir: v3(dir.x, dir.y, dir.z), cell: 0.14, seeds: 4,
+    };
+    this.killWorker.postMessage(req);
+    this.killStatus.textContent = 'Computing kill map…';
+    this.killStatus.classList.remove('hidden');
+  }
+
+  private onKillMessage(m: KillMapMessage) {
+    if (m.id !== this.killReq || !this.killMap) return;
+    if (m.kind === 'grid') this.killOverlay.reset(m.grid);
+    else if (m.kind === 'row') this.killOverlay.addRow(m.cells);
+    else this.killStatus.classList.add('hidden');
+  }
+
+  private buildKillLegend() {
+    const grad = [0, 0.25, 0.5, 0.75, 1].map((p) => `#${killColor(p).getHexString()} ${p * 100}%`).join(', ');
+    this.killLegend.replaceChildren(
+      h('div', { class: 'ltitle' }, 'Chance to disable / knock out'),
+      h('div', { class: 'bar', style: `background: linear-gradient(90deg, ${grad})` }),
+      h('div', { class: 'labels' }, ...[0, 25, 50, 75, 100].map((n) => h('span', {}, `${n}%`))),
+    );
+  }
+
   toggleHeat() {
     this.heat = !this.heat;
     setXray(this.tank, this.xray, this.heat);
@@ -190,6 +265,7 @@ export class App {
   }
 
   private buildLegend() {
+    this.buildKillLegend();
     const grad = HEAT_STOPS.map((mm) => `#${heatColor(mm).getHexString()} ${(100 * mm) / 500}%`).join(', ');
     this.legend.replaceChildren(
       h('div', { class: 'ltitle' }, 'Armor (KE RHA-equivalent, 0°)'),
@@ -637,6 +713,7 @@ export class App {
         h('button', { class: this.xray ? 'on' : '', onclick: () => this.toggleXray() }, 'X-ray [X]'),
         h('button', { class: this.section !== 'off' ? 'on' : '', onclick: () => this.cycleSection() }, `Section: ${this.section} [C]`),
         h('button', { class: this.heat ? 'on' : '', onclick: () => this.toggleHeat() }, 'Armor map [H]'),
+        h('button', { class: this.killMap ? 'on' : '', onclick: () => this.toggleKillMap() }, 'Kill map [K]'),
         h('button', { class: muted ? '' : 'on', onclick: () => this.toggleMute() }, muted ? 'Sound off [M]' : 'Sound on [M]'),
       ),
       h('div', { class: 'hint' }, 'Drag to orbit · click armor to lock aim · Space to fire'),
@@ -650,7 +727,14 @@ export class App {
       this.aimBox.replaceChildren(h('div', { class: 'muted' }, 'Hover the hull to inspect armor'));
       return;
     }
-    const chip = h('span', { class: `chip ${p.rating}` }, p.rating === 'good' ? 'Likely penetration' : p.rating === 'marginal' ? 'Marginal' : p.ricochet > 0.5 ? 'Ricochet likely' : 'Unlikely');
+    const a = this.aim ?? this.hover;
+    let kill = '';
+    if (a) {
+      const d = v3(a.dir.x, a.dir.y, a.dir.z);
+      const { p: kp, pen } = killProbability(this.vehicle, this.vstate, this.round, { vehicleId: this.vehicleId, roundId: this.roundId, distance: this.distance, origin: this.shotOrigin(a), dir: d, turretYaw: this.turretYaw }, 16);
+      kill = `${Math.round(kp * 100)}% knock-out · ${Math.round(pen * 100)}% pen`;
+    }
+    const chip = h('span', { class: `chip ${p.rating}` }, kill || (p.rating === 'good' ? 'Likely penetration' : p.rating === 'marginal' ? 'Marginal' : p.ricochet > 0.5 ? 'Ricochet likely' : 'Unlikely'));
     this.aimBox.replaceChildren(
       h('div', { class: 'aimtitle' }, p.plate.name, this.aim ? h('span', { class: 'lock' }, 'LOCKED') : null),
       h('div', { class: 'stats' },
@@ -734,6 +818,7 @@ export class App {
     }
     this.shotView?.update(this.replayT);
     this.updateSection();
+    this.pollKillMap();
     this.ctx.composer.render();
     requestAnimationFrame(this.frame);
   };
