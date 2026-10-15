@@ -1,0 +1,15 @@
+{
+ "id": "example-br365k",
+ "name": "Example BR-365K (mod)",
+ "family": "APHE",
+ "gun": "85 mm ZiS-S-53",
+ "caliber": 85,
+ "mass": 9.2,
+ "velocity": 792,
+ "drag": 0.0001,
+ "penMaterial": "steel",
+ "filler": 0.048,
+ "capped": true,
+ "fuzeDelay": 1.3,
+ "description": "Soviet armour-piercing high explosive with ballistic cap."
+}

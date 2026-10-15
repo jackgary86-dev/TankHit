@@ -33,6 +33,7 @@ export function renderTopbar(app: App) {
     tab('compare', 'Compare Rounds'),
     tab('duel', 'Duel'),
     tab('daily', 'Daily'),
+    h('button', { class: 'help', title: 'Mods: drop-in vehicles and rounds', onclick: () => app.showModsPanel() }, 'Mods'),
     h('button', { class: 'help', title: 'Show the walkthrough', onclick: () => app.tutorial.show() }, '?'),
   );
 }

@@ -64,4 +64,8 @@ M4A3 (76) W Sherman, T-34-85, Panther G, Tiger I, IS-3, T-55, M48 Patton, T-72B,
 - **Cook-off** – ignition rolls, propagation through racks, detonation or blow-out-panel venting; wet stowage quenches most ignitions.
 - **Ballistics** – point-mass arc with drag for the gunner's sight; superelevation solved per range.
 
+## Mods
+
+Vehicles and rounds can be added as JSON files without rebuilding: use *Mods* in the top bar (browser) or the `mods` folder (desktop). See [mods/README.md](mods/README.md) and the example files there.
+
 See [PROMPT.md](PROMPT.md) for the original design brief.

@@ -1,5 +1,5 @@
 // Electron shell: serves the Vite build from disk in a native window and remembers the window bounds.
-const { app, BrowserWindow, screen, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -45,7 +45,7 @@ function createWindow() {
     backgroundColor: '#15181c',
     autoHideMenuBar: true,
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
-    webPreferences: { contextIsolation: true, sandbox: true },
+    webPreferences: { contextIsolation: true, sandbox: true, preload: path.join(__dirname, 'preload.cjs') },
   });
   if (saved.maximized) win.maximize();
   win.loadFile(path.join(__dirname, '..', 'dist', 'index.html'));
@@ -106,6 +106,21 @@ function createWindow() {
     });
   }
 }
+
+/** Drop-in vehicle/round JSON files live in <userData>/mods. */
+const modsDir = () => path.join(app.getPath('userData'), 'mods');
+ipcMain.handle('mods:path', () => modsDir());
+ipcMain.handle('mods:list', () => {
+  try {
+    fs.mkdirSync(modsDir(), { recursive: true });
+    return fs
+      .readdirSync(modsDir())
+      .filter((f) => f.toLowerCase().endsWith('.json'))
+      .map((name) => ({ name, text: fs.readFileSync(path.join(modsDir(), name), 'utf8') }));
+  } catch {
+    return [];
+  }
+});
 
 app.whenReady().then(() => {
   createWindow();

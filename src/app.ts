@@ -19,6 +19,8 @@ import type { Challenge, ChallengeResult } from './modes/challenges';
 import type { Duel } from './modes/duel';
 import * as MduelPanel from './ui/duelPanel';
 import * as MdailyPanel from './ui/dailyPanel';
+import * as MmodsPanel from './ui/modsPanel';
+import type { ModResult } from './modes/mods';
 import type { DailyScenario } from './modes/daily';
 import { h } from './ui/dom';
 import { Tutorial } from './ui/tutorial';
@@ -70,6 +72,7 @@ export class App {
   threatMode = false;
   duel: Duel | null = null;
   dailyScenario: DailyScenario | null = null;
+  modResults: ModResult[] = [];
   duelShowing: 'enemy' | 'me' = 'enemy';
   duelPanel = h('div', { class: 'panel right duel hidden' });
   private enemyBeforeThreat = '';
@@ -151,6 +154,7 @@ export class App {
     window.addEventListener('scroll', pin, { passive: true });
     this.ui.addEventListener('scroll', pin, { passive: true });
     if (!location.hash) this.tutorial.maybeShow();
+    void MmodsPanel.loadModsAtStartup(this);
     requestAnimationFrame(this.frame);
   }
 
@@ -205,6 +209,7 @@ export class App {
 
   showDuelPicker = () => MduelPanel.showDuelPicker(this);
   showDailyPicker = () => MdailyPanel.showDailyPicker(this);
+  showModsPanel = () => MmodsPanel.showModsPanel(this);
   renderDuelPanel = () => MduelPanel.renderDuelPanel(this);
 
   resetDamage() {
