@@ -238,3 +238,7 @@ button.share { width: auto; font-size: 11px; padding: 3px 8px; }
 .timeline .ticks .chap.module { background: #ff8c1a; }
 .timeline .ticks .chap.ammo { background: var(--warn); }
 .timeline .ticks .chap.big { background: #ff3b2f; box-shadow: 0 0 6px #ff3b2f; }
+
+.threat { margin-top: 6px; padding: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; }
+.threat label { margin-top: 0; }
+.threat button { margin-top: 6px; }

@@ -39,7 +39,7 @@ export function renderLeft(app: App) {
     const pv = h('span', { class: 'val' }, `${app.pitch}°`);
     yaw.addEventListener('input', () => { app.yaw = Number(yaw.value); yv.textContent = `${app.yaw}°`; app.updatePreview(); });
     pitch.addEventListener('input', () => { app.pitch = Number(pitch.value); pv.textContent = `${app.pitch}°`; app.updatePreview(); });
-    angleCtl.append(h('label', {}, 'Yaw (0 = frontal)'), h('div', { class: 'row' }, yaw, yv), h('label', {}, 'Pitch (down)'), h('div', { class: 'row' }, pitch, pv));
+    angleCtl.append(h('label', {}, app.threatMode ? 'Hull angle (0 = facing them)' : 'Yaw (0 = frontal)'), h('div', { class: 'row' }, yaw, yv), h('label', {}, 'Pitch (down)'), h('div', { class: 'row' }, pitch, pv));
   }
   const tur = h('input', { type: 'range', min: -180, max: 180, step: 1, value: app.turretYaw, 'data-turret': true });
   const turVal = h('span', { class: 'val' }, `${app.turretYaw}°`);
@@ -77,8 +77,16 @@ export function renderLeft(app: App) {
   app.left.replaceChildren(
     h('h2', {}, app.mode === 'compare' ? 'Compare Rounds' : app.challenge ? 'Challenge' : 'Protection Analysis'),
     app.challengeBox() ?? '',
-    label('Target'),
+    label(app.threatMode ? 'Your tank (under fire)' : 'Target'),
     target,
+    app.mode === 'sandbox' && !app.challenge
+      ? h('div', { class: 'threat' },
+          label(app.threatMode ? 'Enemy round and range are set below' : 'Your tank'),
+          app.threatMode ? '' : select(VEHICLES.map((v) => ({ value: v.id, label: `[${v.br}] ${v.name}` })), app.myVehicleId, (id) => app.setMyVehicle(id)),
+          h('button', { class: app.threatMode ? 'on' : '', title: 'Point the kill map at your own tank: their round, their range, your hull angle', onclick: () => app.toggleThreat() },
+            app.threatMode ? 'Back to the enemy' : 'Threat to me'),
+          app.threatMode ? h('div', { class: 'desc' }, 'Angle your hull with the slider below: a sharper angle thickens the glacis but exposes the side and its racks. The map shows their chance to knock you out.') : '')
+      : '',
     h('div', { class: 'desc' }, app.vehicle.description),
     label('Round type'),
     select(families.map((f) => ({ value: f, label: f })), fam, (f) => {

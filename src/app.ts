@@ -56,6 +56,11 @@ export class App {
   autoCam = true;
   /** Sandbox only: shots land exactly where aimed (analysis). Off, and in every other mode, dispersion applies. */
   perfectAim = true;
+  /** The player's own vehicle (duels, 'threat to me'); remembered per browser. */
+  myVehicleId = (() => { try { return localStorage.getItem('tankhit.myVehicle') ?? 't34-85'; } catch { return 't34-85'; } })();
+  /** Threat mode: the kill map is pointed at *my* tank for the chosen enemy round, range and hull angle. */
+  threatMode = false;
+  private enemyBeforeThreat = '';
   camGoal: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
   lastAtMuzzle = false;
   gunnerPickT = 0;
@@ -213,6 +218,31 @@ export class App {
   toggleReadableSize() {
     setReadableSize(!isReadableSize());
     if (this.current >= 0) this.showShot(this.current, false);
+    this.renderLeft();
+  }
+
+  setMyVehicle(id: string) {
+    this.myVehicleId = id;
+    try { localStorage.setItem('tankhit.myVehicle', id); } catch { /* no storage */ }
+    if (this.threatMode) this.loadVehicle(id);
+    this.renderLeft();
+  }
+
+  /** Flip between 'what can I do to them' and 'what can they do to me'. */
+  toggleThreat() {
+    this.threatMode = !this.threatMode;
+    if (this.threatMode) {
+      this.enemyBeforeThreat = this.vehicleId;
+      this.loadVehicle(this.myVehicleId);
+      this.respectCamera = false; // the yaw slider becomes my hull angle against their line of fire
+      this.setTurretYaw(0);
+      MviewToggles.setViewMode(this, 'killmap');
+    } else {
+      if (this.enemyBeforeThreat) this.loadVehicle(this.enemyBeforeThreat);
+      MviewToggles.setViewMode(this, 'xray');
+    }
+    this.buildKillLegend();
+    this.clearAim();
     this.renderLeft();
   }
 

@@ -53,7 +53,7 @@ export function onKillMessage(app: App, m: KillMapMessage) {
 export function buildKillLegend(app: App) {
   const grad = [0, 0.25, 0.5, 0.75, 1].map((p) => `#${killColor(p).getHexString()} ${p * 100}%`).join(', ');
   app.killLegend.replaceChildren(
-    h('div', { class: 'ltitle' }, 'Chance to disable / knock out'),
+    h('div', { class: 'ltitle' }, app.threatMode ? 'Their chance to disable / knock out YOU' : 'Chance to disable / knock out'),
     h('div', { class: 'bar', style: `background: linear-gradient(90deg, ${grad})` }),
     h('div', { class: 'labels' }, ...[0, 25, 50, 75, 100].map((n) => h('span', {}, `${n}%`))),
   );
