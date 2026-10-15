@@ -21,6 +21,7 @@ export class ShotView {
   private heads: THREE.Points;
   private markers: THREE.Mesh[] = [];
   private wounds: THREE.Mesh[] = [];
+  private fx: { kind: string; t: number; obj: THREE.Object3D }[] = [];
 
   constructor(readonly view: TankView, readonly shot: ShotResult) {
     const n = shot.traces.length;
@@ -58,6 +59,96 @@ export class ShotView {
       this.group.add(m);
     }
     this.buildWounds();
+    this.buildBigEvents();
+  }
+
+  private buildBigEvents() {
+    for (const e of this.shot.bigEvents) {
+      const p = new THREE.Vector3(e.point.x, e.point.y, e.point.z);
+      if (e.kind === 'detonation') {
+        const ball = new THREE.Mesh(
+          new THREE.SphereGeometry(1, 32, 20),
+          new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+        );
+        ball.position.copy(p);
+        const light = new THREE.PointLight(0xffa040, 0, 25, 1.5);
+        light.position.copy(p).add(new THREE.Vector3(0, 0.5, 0));
+        const g = new THREE.Group();
+        g.add(ball, light);
+        this.add('detonation', e.t, g);
+      } else if (e.kind === 'blowout') {
+        const geo = new THREE.ConeGeometry(0.45, 3.2, 20, 1, true);
+        geo.translate(0, 1.6, 0);
+        geo.rotateX(Math.PI);
+        geo.translate(0, 3.2, 0);
+        const jet = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xff7a20, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+        jet.position.copy(p);
+        const light = new THREE.PointLight(0xff8a30, 0, 15, 1.5);
+        light.position.copy(p).add(new THREE.Vector3(0, 1.2, 0));
+        const g = new THREE.Group();
+        g.add(jet, light);
+        this.add('blowout', e.t, g);
+      } else if (e.kind === 'fire') {
+        const light = new THREE.PointLight(0xff6a1a, 0, 8, 1.6);
+        light.position.copy(p);
+        const glow = new THREE.Mesh(
+          new THREE.SphereGeometry(0.25, 16, 12),
+          new THREE.MeshBasicMaterial({ color: 0xff5a10, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }),
+        );
+        glow.position.copy(p);
+        const g = new THREE.Group();
+        g.add(light, glow);
+        this.add('fire', e.t, g);
+      }
+    }
+  }
+
+  private add(kind: string, t: number, obj: THREE.Object3D) {
+    obj.visible = false;
+    this.fx.push({ kind, t, obj });
+    this.group.add(obj);
+  }
+
+  private updateBigEvents(T: number) {
+    let tossAge = -1;
+    for (const f of this.fx) {
+      const age = T - f.t;
+      f.obj.visible = age >= 0;
+      if (age < 0) continue;
+      const flick = 0.75 + 0.25 * Math.sin(T * 47) * Math.sin(T * 13);
+      if (f.kind === 'detonation') {
+        tossAge = age;
+        const ball = f.obj.children[0] as THREE.Mesh;
+        const light = f.obj.children[1] as THREE.PointLight;
+        const s = Math.min(2.2, 0.3 + age * 5);
+        ball.scale.setScalar(s);
+        (ball.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.7 - age / 1.8);
+        (ball.material as THREE.MeshBasicMaterial).color.setHSL(0.09 - Math.min(0.06, age * 0.04), 1, Math.max(0.35, 0.75 - age * 0.3));
+        light.intensity = Math.max(0, 60 * (1 - age / 2.5)) * flick;
+      } else if (f.kind === 'blowout') {
+        const jet = f.obj.children[0] as THREE.Mesh;
+        const light = f.obj.children[1] as THREE.PointLight;
+        const life = Math.max(0, 1 - age / 2.4);
+        jet.scale.set(flick, Math.min(1, age * 4) * life + 0.01, flick);
+        (jet.material as THREE.MeshBasicMaterial).opacity = 0.8 * life;
+        light.intensity = 25 * life * flick;
+      } else if (f.kind === 'fire') {
+        const light = f.obj.children[0] as THREE.PointLight;
+        const glow = f.obj.children[1] as THREE.Mesh;
+        light.intensity = 6 * flick * Math.min(1, age * 3);
+        glow.scale.setScalar(0.6 + flick * 0.6);
+      }
+    }
+    // Catastrophic: the turret is thrown off.
+    const tur = this.view.turret;
+    if (tossAge >= 0) {
+      const u = Math.min(tossAge, 1.6);
+      tur.position.set(-0.6 * u, Math.max(0, 4 * u - 2.1 * u * u), 0.9 * u);
+      tur.rotation.set(u * 0.9, u * 0.6, u * 0.4);
+    } else {
+      tur.position.set(0, 0, 0);
+      tur.rotation.set(0, 0, 0);
+    }
   }
 
   /** Glowing wound channels inside the gel dummies – stylised cavity, not gore. */
@@ -117,6 +208,7 @@ export class ShotView {
       (w.material as THREE.MeshBasicMaterial).opacity = age < 0.4 ? 1 : 0.7;
     }
     applyDamage(this.view, this.shot, T);
+    this.updateBigEvents(T);
   }
 
   dispose() {
@@ -126,6 +218,8 @@ export class ShotView {
       (m.material as THREE.Material | undefined)?.dispose?.();
     });
     this.group.removeFromParent();
+    this.view.turret.position.set(0, 0, 0);
+    this.view.turret.rotation.set(0, 0, 0);
   }
 }
 
@@ -144,6 +238,16 @@ export function applyDamage(view: TankView, shot: ShotResult | null, T: number) 
       }
     }
   }
+  const ignite: Record<string, number> = {};
+  const burn: Record<string, number> = {};
+  const det: Record<string, number> = {};
+  if (shot) {
+    for (const e of shot.ammoEvents) {
+      if (e.kind === 'ignite') ignite[e.moduleId] = e.t;
+      if (e.kind === 'burn') burn[e.moduleId] = Math.min(burn[e.moduleId] ?? Infinity, e.t);
+      if (e.kind === 'detonate') det[e.moduleId] = e.t;
+    }
+  }
   for (const m of v.modules) {
     const mesh = view.moduleMeshes.get(m.id)!;
     const mat = mesh.material as THREE.MeshStandardMaterial;
@@ -152,6 +256,22 @@ export function applyDamage(view: TankView, shot: ShotResult | null, T: number) 
     if (frac < 0.999) color = frac > 0.66 ? DAMAGE_COLORS[0] : frac > 0.33 ? DAMAGE_COLORS[1] : frac > 0 ? DAMAGE_COLORS[2] : DAMAGE_COLORS[3];
     mat.color.setHex(color);
     mat.emissive.setRGB(flash[m.id] ?? 0, (flash[m.id] ?? 0) * 0.6, 0);
+    if (m.ammo) {
+      mesh.visible = !(base?.ammoGone[m.id]) && !(det[m.id] !== undefined && T >= det[m.id]);
+      const ti = ignite[m.id];
+      const tb = burn[m.id];
+      if (ti !== undefined && T >= ti) {
+        // Glow orange -> red -> white while the propellant catches, then char.
+        const k = Math.min(1, (T - ti) / 0.35);
+        const glow = k < 0.5 ? new THREE.Color(0xff8a00).lerp(new THREE.Color(0xff2000), k * 2) : new THREE.Color(0xff2000).lerp(new THREE.Color(0xffffff), (k - 0.5) * 2);
+        mat.emissive.copy(glow).multiplyScalar(1.6);
+        mat.color.copy(glow);
+      }
+      if (tb !== undefined && T >= tb + 0.25) {
+        mat.color.setHex(0x161616);
+        mat.emissive.setRGB(0.25 + 0.15 * Math.sin(T * 30), 0.06, 0);
+      }
+    }
   }
   applyCrew(view, shot, T);
 }
@@ -174,7 +294,8 @@ export function applyCrew(view: TankView, shot: ShotResult | null, T: number) {
         zoneHp[hit.zone] -= hit.damage;
         flash[hit.zone] = Math.max(flash[hit.zone] ?? 0, 1 - (T - hit.t) / 0.4);
       }
-      down = down || checkIncapacitated(v, c.id, zoneHp);
+      const det = shot.bigEvents.find((e) => e.kind === 'detonation');
+      down = down || checkIncapacitated(v, c.id, zoneHp) || (!!det && T >= det.t);
     }
     for (const z of c.zones) {
       const meshes = view.zoneMeshes.get(`${c.id}:${z.zone}`) ?? [];

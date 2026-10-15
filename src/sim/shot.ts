@@ -113,6 +113,9 @@ export class ShotSim {
   firstPlate?: string;
   residual = 0;
   spallCount = 0;
+  /** Ammo struck this shot that rolled an ignition, with the time it caught. */
+  ignitions = new Map<string, number>();
+  fuelFire: { t: number; point: Vec3 } | null = null;
 
   constructor(readonly v: Vehicle, readonly r: Round, readonly input: ShotInput, before: VehicleState) {
     this.rng = makeRng(input.seed);
@@ -207,12 +210,107 @@ export class ShotSim {
     return P - 4;
   }
 
-  damageModule(m: Module, amount: number, point: Vec3, t: number, _byPenetrator: boolean) {
+  damageModule(m: Module, amount: number, point: Vec3, t: number, byPenetrator: boolean) {
     const hp = this.state.moduleHp[m.id];
     if (hp <= 0 && !m.ammo) return;
     const dmg = Math.min(Math.max(hp, 0), amount);
     this.state.moduleHp[m.id] = hp - dmg;
     this.res.moduleHits.push({ t, moduleId: m.id, damage: dmg, hpAfter: hp - dmg, point });
+    if (m.ammo && !this.ignitions.has(m.id)) {
+      let chance = byPenetrator ? 0.8 : Math.min(0.6, amount / 90);
+      chance *= 0.6 + Math.min(1, m.ammo.propellant / 6) * 0.6;
+      if (this.r.penMaterial === 'du') chance += 0.15; // pyrophoric DU fragments
+      if (this.rng() < chance) this.ignitions.set(m.id, t);
+    }
+    if (m.type === 'fuel' && !this.fuelFire) {
+      const chance = byPenetrator ? 0.35 : Math.min(0.2, amount / 300);
+      if (this.rng() < chance) this.fuelFire = { t, point };
+    }
+  }
+
+  /** Propagate ammo fires through racks; detonate or vent through blow-out panels. */
+  resolveCookoff() {
+    const { v, state } = this;
+    if (this.fuelFire) {
+      state.onFire = true;
+      this.res.bigEvents.push({ t: this.fuelFire.t + 0.1, kind: 'fire', point: this.fuelFire.point });
+    }
+    if (!this.ignitions.size) return;
+    const ammo = v.modules.filter((m) => m.ammo && !state.ammoGone[m.id]);
+    const centre = (m: Module) => ({ x: (m.box.min.x + m.box.max.x) / 2, y: (m.box.min.y + m.box.max.y) / 2, z: (m.box.min.z + m.box.max.z) / 2 });
+    const lit = new Map<string, number>();
+    const queue = [...this.ignitions.entries()].map(([id, t]) => ({ id, t }));
+    while (queue.length) {
+      queue.sort((a, b) => a.t - b.t);
+      const { id, t } = queue.shift()!;
+      if (lit.has(id)) continue;
+      lit.set(id, t);
+      const m = v.modules.find((x) => x.id === id)!;
+      // A direct penetrator hit on a high-explosive round can detonate it outright.
+      const c = centre(m);
+      for (const n of ammo) {
+        if (lit.has(n.id)) continue;
+        const d = dist(c, centre(n));
+        const sameRack = n.ammo!.rack === m.ammo!.rack;
+        if (d > (sameRack ? 0.32 : 0.25)) continue;
+        if (this.rng() < (sameRack ? 0.62 : 0.3)) queue.push({ id: n.id, t: t + 0.18 + this.rng() * 0.45 });
+      }
+    }
+    for (const [id, t] of lit) {
+      this.res.ammoEvents.push({ t, moduleId: id, kind: 'ignite' });
+      this.res.ammoEvents.push({ t: t + 0.35, moduleId: id, kind: 'burn' });
+      state.ammoGone[id] = true;
+      state.moduleHp[id] = 0;
+      this.res.duration = Math.max(this.res.duration, t + 0.6);
+    }
+    state.onFire = true;
+    const firstT = Math.min(...lit.values());
+    const firstM = v.modules.find((x) => x.id === [...lit.entries()].find(([, t]) => t === firstT)![0])!;
+    this.res.bigEvents.push({ t: firstT + 0.1, kind: 'fire', point: centre(firstM), rack: firstM.ammo!.rack });
+
+    // Racks that reach their threshold detonate (or vent if isolated).
+    const heHit = [...this.ignitions.keys()].some((id) => (v.modules.find((x) => x.id === id)!.ammo!.filler ?? 0) > 0.5);
+    for (const rack of v.racks) {
+      const inRack = [...lit.entries()].filter(([id]) => v.modules.find((x) => x.id === id)!.ammo!.rack === rack.id).sort((a, b) => a[1] - b[1]);
+      if (!inRack.length) continue;
+      const threshold = heHit ? Math.max(1, rack.detonateAt - 2) : rack.detonateAt;
+      if (inRack.length < threshold) continue;
+      const t = inRack[threshold - 1][1] + 0.3;
+      const rackMods = v.modules.filter((x) => x.ammo?.rack === rack.id);
+      const pts = rackMods.map(centre);
+      const point = { x: pts.reduce((a, p) => a + p.x, 0) / pts.length, y: pts.reduce((a, p) => a + p.y, 0) / pts.length, z: pts.reduce((a, p) => a + p.z, 0) / pts.length };
+      for (const m of rackMods) {
+        if (!state.ammoGone[m.id]) this.res.ammoEvents.push({ t: t + this.rng() * 0.2, moduleId: m.id, kind: rack.isolated ? 'burn' : 'detonate' });
+        state.ammoGone[m.id] = true;
+        state.moduleHp[m.id] = 0;
+      }
+      if (rack.isolated) {
+        this.res.bigEvents.push({ t, kind: 'blowout', point, rack: rack.id });
+        this.res.duration = Math.max(this.res.duration, t + 2.5);
+      } else {
+        this.res.bigEvents.push({ t, kind: 'detonation', point, rack: rack.id });
+        this.emitFragments(point, { x: 0, y: 1, z: 0 }, t, 60, 180, 140, 'frag');
+        for (const c of v.crew) state.crew[c.id].incapacitated = true;
+        state.destroyed = true;
+        this.res.duration = Math.max(this.res.duration, t + 3.5);
+        break;
+      }
+    }
+    // Burning propellant scorches crew close to it (if the vehicle didn't simply explode).
+    if (!state.destroyed) {
+      for (const c of v.crew) {
+        const torso = c.zones.find((z) => z.zone === 'torso')!;
+        const tc = { x: (torso.box.min.x + torso.box.max.x) / 2, y: (torso.box.min.y + torso.box.max.y) / 2, z: (torso.box.min.z + torso.box.max.z) / 2 };
+        for (const [id, t] of lit) {
+          const m = v.modules.find((x) => x.id === id)!;
+          if (v.racks.find((r) => r.id === m.ammo!.rack)?.isolated) continue;
+          if (dist(tc, centre(m)) < 0.9) {
+            this.damageCrew(c, torso, 30, tc, norm(sub(tc, centre(m))), t + 0.4, 0.06);
+            break;
+          }
+        }
+      }
+    }
   }
 
   /** Gel dummy hit: subtract zone HP, record a wound channel, check incapacitation. */
@@ -281,6 +379,7 @@ export class ShotSim {
   }
 
   finish(): ShotResult {
+    this.resolveCookoff();
     this.res.summary = summarize(this);
     this.res.duration += 0.8;
     return this.res;

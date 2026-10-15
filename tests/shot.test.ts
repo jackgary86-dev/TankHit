@@ -59,7 +59,7 @@ describe('spall', () => {
     const shot = simulateShot(t34, r, { vehicleId: t34.id, roundId: r.id, distance: 100, origin: v3(0.2, 0.9, 6), dir: v3(0, 0, -1), seed: 5 }, initialState(t34));
     expect(shot.summary.penetrated).toBe(true);
     expect(shot.summary.spallCount).toBeGreaterThan(15);
-    expect(shot.traces.filter((t) => t.kind === 'spall').length).toBe(shot.summary.spallCount);
+    expect(shot.traces.filter((t) => t.kind === 'spall' || t.kind === 'frag').length).toBe(shot.summary.spallCount);
     expect(shot.moduleHits.length).toBeGreaterThan(0);
   });
 
@@ -87,5 +87,34 @@ describe('gel crew dummies', () => {
     const shot = simulateShot(t34, r, { vehicleId: t34.id, roundId: r.id, distance: 100, origin: v3(1.37, 6, 0.42), dir: v3(0, -1, 0), seed: 2 }, initialState(t34));
     expect(shot.stateAfter.crew.driver.incapacitated).toBe(true);
     expect(shot.summary.crewIncapacitated).toContain('driver');
+  });
+});
+
+describe('ammunition cook-off', () => {
+  const shoot = (seed: number) => {
+    const r = roundById('m82');
+    // Side shot straight into the floor ammo racks.
+    return simulateShot(t34, r, { vehicleId: t34.id, roundId: r.id, distance: 100, origin: v3(0.2, 0.58, 6), dir: v3(0, 0, -1), seed }, initialState(t34));
+  };
+
+  it('hitting the ammo racks causes fires and some detonations', () => {
+    const shots = Array.from({ length: 30 }, (_, i) => shoot(i + 1));
+    expect(shots.filter((s) => s.summary.cookOff !== 'none').length).toBeGreaterThan(15);
+    expect(shots.some((s) => s.summary.cookOff === 'detonation')).toBe(true);
+  });
+
+  it('a detonation is catastrophic and knocks out every crew member', () => {
+    const det = Array.from({ length: 40 }, (_, i) => shoot(i + 1)).find((s) => s.summary.cookOff === 'detonation')!;
+    expect(det.summary.verdict).toBe('Catastrophic (cook-off)');
+    for (const c of t34.crew) expect(det.stateAfter.crew[c.id].incapacitated).toBe(true);
+    expect(det.bigEvents.some((e) => e.kind === 'detonation')).toBe(true);
+  });
+
+  it('ignitions propagate in time order (ignite before burn)', () => {
+    const s = Array.from({ length: 30 }, (_, i) => shoot(i + 1)).find((x) => x.ammoEvents.length > 4)!;
+    for (const e of s.ammoEvents.filter((e) => e.kind === 'ignite')) {
+      const burn = s.ammoEvents.find((b) => b.kind === 'burn' && b.moduleId === e.moduleId)!;
+      expect(burn.t).toBeGreaterThan(e.t);
+    }
   });
 });
