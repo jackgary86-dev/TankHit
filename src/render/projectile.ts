@@ -29,6 +29,10 @@ export interface ShellPose {
   along: number;
   /** Kind of the trace being ridden. */
   traceKind: Trace['kind'];
+  /** Metres left on the current trace. */
+  left: number;
+  /** True while riding the last body trace. */
+  onLast: boolean;
 }
 
 /** Traces that carry the projectile body: the approach/interior shell path and a ricochet bounce. */
@@ -60,8 +64,8 @@ export function shellPoseAt(traces: Trace[], impacts: ImpactEvent[], T: number, 
   const first = impacts[0];
   const sinceImpact = first ? T - first.t : -1;
   const pen0 = first?.penMm ?? 1;
-  const pose = (p: { x: number; y: number; z: number }, d: THREE.Vector3, phase: ShellPhase, remaining: number, along = 0, traceKind: Trace['kind'] = 'shell'): ShellPose => ({
-    pos: new THREE.Vector3(p.x, p.y, p.z), dir: d, phase, t: T, remaining, sinceImpact, along, traceKind,
+  const pose = (p: { x: number; y: number; z: number }, d: THREE.Vector3, phase: ShellPhase, remaining: number, along = 0, traceKind: Trace['kind'] = 'shell', left = 0, onLast = false): ShellPose => ({
+    pos: new THREE.Vector3(p.x, p.y, p.z), dir: d, phase, t: T, remaining, sinceImpact, along, traceKind, left, onLast,
   });
   if (!body.length) return pose({ x: 0, y: -10, z: 0 }, new THREE.Vector3(1, 0, 0), 'gone', 1);
   if (muzzleDist > 0 && T >= 0 && T < MUZZLE_DUR) {
@@ -87,16 +91,17 @@ export function shellPoseAt(traces: Trace[], impacts: ImpactEvent[], T: number, 
       const k = easeContact(kRaw, endsAtImpact, startsAtImpact);
       const p = { x: tr.from.x + (tr.to.x - tr.from.x) * k, y: tr.from.y + (tr.to.y - tr.from.y) * k, z: tr.from.z + (tr.to.z - tr.from.z) * k };
       const d = dirOf(tr);
-      const along = k * Math.hypot(tr.to.x - tr.from.x, tr.to.y - tr.from.y, tr.to.z - tr.from.z);
+      const len = Math.hypot(tr.to.x - tr.from.x, tr.to.y - tr.from.y, tr.to.z - tr.from.z);
+      const along = k * len;
       const remaining = Math.max(0.15, Math.min(1, (tr.energy || pen0) / Math.max(pen0, 1e-6)));
       let phase: ShellPhase = tr.kind === 'ricochet' ? 'ricochet' : first && T >= first.t ? 'inside' : 'flight';
       if (T > tr.t1) {
         // Past the end of the last body trace.
         const last = impacts[impacts.length - 1];
-        const left = last && (last.kind === 'ricochet' || (tr.kind === 'shell' && i === body.length - 1 && exitedVehicle(tr, impacts)));
-        phase = left ? 'gone' : last?.kind === 'shatter' || last?.kind === 'explode' ? 'gone' : 'stopped';
+        const left = !last || last.kind === 'ricochet' || (tr.kind === 'shell' && i === body.length - 1 && exitedVehicle(tr, impacts));
+        phase = left ? 'gone' : last.kind === 'shatter' || last.kind === 'explode' ? 'gone' : 'stopped';
       }
-      return pose(p, d, phase, remaining, along, tr.kind);
+      return pose(p, d, phase, remaining, along, tr.kind, len - along, i === body.length - 1);
     }
   }
   return pose(body[body.length - 1].to, dirOf(body[body.length - 1]), 'stopped', 0.15);
@@ -307,10 +312,18 @@ export class ProjectileView {
   /** Shards of the shell body thrown when it shatters or bursts. */
   private chunks: { mesh: THREE.Mesh; dir: THREE.Vector3; speed: number; spin: THREE.Vector3 }[] = [];
   private breakAt: { t: number; point: THREE.Vector3 } | null = null;
+  /** Whether the shell leaves the scene at the end of its last trace (miss, exit, ricochet) rather than stopping. */
+  private leaves = false;
+  private fadeMats: THREE.Material[] = [];
 
   constructor(readonly round: Round, readonly traces: Trace[], readonly impacts: ImpactEvent[], seed = 1, readonly range = 0) {
     this.parts = buildProjectile(round);
     this.buildChunks(seed);
+    this.leaves = shellPoseAt(traces, impacts, 1e6, round.family).phase === 'gone' && round.family !== 'HEAT' && !impacts.some((i) => i.kind === 'shatter' || i.kind === 'explode');
+    this.parts.group.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+      if (m && !this.fadeMats.includes(m)) this.fadeMats.push(m);
+    });
     // Fading ribbon behind the nose: a unit cone along -X, scaled to the recent path each frame.
     const cone = new THREE.ConeGeometry(1, 1, 10, 1, true);
     cone.rotateZ(Math.PI / 2); // tip toward +X (the shell), base trailing behind
@@ -374,6 +387,12 @@ export class ProjectileView {
     const g = this.parts.group;
     g.visible = p.phase !== 'gone' && T >= 0;
     if (!g.visible) return;
+    // Leaving the scene: fade over the last metre of the final trace instead of popping out.
+    const fade = this.leaves && p.onLast && p.phase !== 'stopped' ? Math.min(1, p.left / 1.0) : 1;
+    for (const m of this.fadeMats) {
+      m.transparent = fade < 1 || m.transparent;
+      m.opacity = fade < 1 ? fade * (m === (this.trail?.material as THREE.Material) ? 0.55 : 1) : m === (this.trail?.material as THREE.Material) ? m.opacity : 1;
+    }
     g.position.copy(p.pos);
     g.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), p.dir);
     const launchT = bodyTraces(this.traces)[0]?.t0 ?? 0;

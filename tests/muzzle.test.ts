@@ -27,3 +27,16 @@ describe('muzzle segment', () => {
     expect(shellPoseAt(shot.traces, shot.impacts, 0.05, 'APFSDS', 0).phase).toBe('flight');
   });
 });
+
+describe('leaving the scene', () => {
+  it('a miss flies off and is gone after its tracer; it does not hang in the air', () => {
+    const miss = simulateShot(t34, roundById('br365k'), { vehicleId: t34.id, roundId: 'br365k', distance: 500, origin: v3(0.6, 4.5, 6), dir: v3(0, 0, -1), seed: 1 }, initialState(t34));
+    expect(miss.summary.verdict).toBe('Miss');
+    const tr = miss.traces[0];
+    expect(shellPoseAt(miss.traces, miss.impacts, tr.t1 * 0.5, 'APHE').phase).toBe('flight');
+    const end = shellPoseAt(miss.traces, miss.impacts, tr.t1 - 0.01, 'APHE');
+    expect(end.onLast).toBe(true);
+    expect(end.left).toBeLessThan(0.2);
+    expect(shellPoseAt(miss.traces, miss.impacts, tr.t1 + 0.1, 'APHE').phase).toBe('gone');
+  });
+});
