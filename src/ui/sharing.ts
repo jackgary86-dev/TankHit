@@ -26,6 +26,7 @@ export function loadFromHash(app: App) {
   app.vstate = shot.stateAfter;
   app.shots.push(shot);
   app.decals.addFromShot(shot);
+  app.spent.addFromShot(shot, app.shots.length - 1);
   app.showShot(0, true);
   app.renderLeft();
   // Frame the impact.

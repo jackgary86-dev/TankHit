@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { roundById } from './data/rounds';
 import { VEHICLES, vehicleById } from './data/vehicles';
 import { DamageDecals } from './render/decals';
+import { SpentRounds } from './render/spent';
 import { GunnerView } from './render/gunner';
 import { KillOverlay } from './render/killOverlay';
 import { createScene, type SceneCtx } from './render/scene';
@@ -49,6 +50,7 @@ export class App {
   killMap = false;
   gunner = new GunnerView();
   decals!: DamageDecals;
+  spent!: SpentRounds;
   autoCam = true;
   camGoal: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
   gunnerPickT = 0;
@@ -138,6 +140,8 @@ export class App {
     this.vehicleId = id;
     this.tank = buildTank(this.vehicle);
     this.decals = new DamageDecals(this.tank);
+    this.spent?.clear();
+    this.spent = new SpentRounds(this.tank);
     this.ctx.scene.add(this.tank.root);
     setXray(this.tank, this.xray, this.heat);
     this.resetDamage();
@@ -146,6 +150,7 @@ export class App {
   resetDamage() {
     this.vstate = initialState(this.vehicle);
     this.decals?.clear();
+    this.spent?.clear();
     this.challengeResult = this.challenge ? { status: 'active', stars: 0 } : null;
     this.comparePanel.classList.add('hidden');
     this.shots = [];

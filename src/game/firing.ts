@@ -42,6 +42,7 @@ export function fire(app: App) {
   app.vstate = shot.stateAfter;
   app.shots.push(shot);
   app.decals.addFromShot(shot);
+  app.spent.addFromShot(shot, app.shots.length - 1);
   if (app.challenge) {
     app.challengeResult = evaluateChallenge(app.challenge, app.vehicle, app.vstate, app.shots);
     if (app.challengeResult.status === 'won') saveStars(app.challenge.id, app.challengeResult.stars);
@@ -57,6 +58,7 @@ export function showShot(app: App, i: number, play: boolean) {
   const shot = app.shots[i];
   if ((shot.input.turretYaw ?? 0) !== app.turretYaw) app.setTurretYaw(shot.input.turretYaw ?? 0);
   app.shotView = new ShotView(app.tank, shot);
+  app.spent.setCurrent(i);
   app.ctx.scene.add(app.shotView.group);
   app.replayT = play ? 0 : shot.duration;
   app.playing = play;
