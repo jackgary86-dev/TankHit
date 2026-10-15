@@ -167,3 +167,47 @@ button.share { width: auto; font-size: 11px; padding: 3px 8px; }
 .picker .challenge.locked { opacity: 0.5; cursor: not-allowed; }
 .picker .challenge.locked:hover { border-color: var(--line); }
 .picker .challenge .lock { font-size: 11px; color: var(--muted); border-color: var(--muted); }
+
+/* ---------- tooltips, help, tutorial */
+.tip { cursor: help; }
+.tip .k, label.tip { text-decoration: underline dotted rgba(255,255,255,0.35); text-underline-offset: 3px; }
+.topbar .help { width: 28px; padding: 5px 0; font-weight: 700; }
+.tutorial { position: absolute; inset: 0; background: rgba(8,10,12,0.55); display: flex; align-items: center; justify-content: center; z-index: 5; }
+.tutcard { width: min(440px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 18px 20px; }
+.tutcard h3 { margin: 4px 0 8px; font-size: 18px; }
+.tutcard p { margin: 0 0 14px; line-height: 1.45; color: var(--text); }
+.tutstep { color: var(--muted); font-size: 11px; letter-spacing: 1px; }
+.tutbtns { display: flex; gap: 8px; justify-content: flex-end; }
+.tutbtns button { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 6px 14px; cursor: pointer; font: inherit; }
+.tutbtns button.primary { background: #8a2a1c; border-color: #c4452e; font-weight: 600; }
+
+/* ---------- collapsible panels */
+.panel h2 { cursor: pointer; user-select: none; }
+.panel h2::after { content: '\25BE'; float: right; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.panel.collapsed > *:not(h2):not(.row:first-child) { display: none !important; }
+.panel.collapsed .row:first-child > *:not(h2) { display: none; }
+.panel.collapsed h2::after { content: '\25B8'; }
+.panel.collapsed { max-height: none; overflow: hidden; }
+
+/* ---------- phones and narrow windows */
+@media (max-width: 900px) {
+  .topbar { top: 6px; padding: 3px 4px; gap: 2px; max-width: calc(100vw - 12px); }
+  .topbar .logo { padding: 0 6px 0 4px; font-size: 12px; }
+  .topbar button { padding: 4px 7px; font-size: 12px; }
+  .panel.left, .panel.right, .panel.compare { left: 6px; right: 6px; width: auto; max-height: 42vh; top: auto; bottom: 6px; font-size: 12px; padding: 8px 10px; }
+  .panel.right, .panel.compare { bottom: auto; top: 48px; max-height: 36vh; }
+  .panel.right:not(.collapsed), .panel.compare:not(.collapsed) { max-height: 36vh; }
+  .panel.left.collapsed, .panel.right.collapsed, .panel.compare.collapsed { max-height: none; }
+  .stats { grid-template-columns: 1fr 1fr 1fr; }
+  .panel select, .panel button { padding: 9px 8px; font-size: 13px; }
+  .row input[type=range] { min-height: 28px; }
+  .timeline { left: 6px; right: 6px; transform: none; width: auto; min-width: 0; bottom: calc(42vh + 12px); padding: 6px 8px; }
+  .timeline .keys { display: none; }
+  .shotlog { left: 6px; right: 6px; transform: none; max-width: none; bottom: calc(42vh + 124px); }
+  .legend, .killstatus { right: 6px; bottom: calc(42vh + 12px); width: 200px; }
+  .legend.kill { bottom: calc(42vh + 72px); }
+  .sighthud { gap: 8px; font-size: 10px; padding: 4px 8px; max-width: calc(100vw - 12px); overflow-x: auto; }
+  .reticle { width: 100vw; height: 100vw; }
+  .picker { padding: 12px; }
+  .hint { display: none; }
+}

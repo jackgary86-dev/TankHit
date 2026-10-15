@@ -22,6 +22,7 @@ import { compareRounds } from './modes/compare';
 import { isUnlocked, MAX_STARS, nextUnlock, REQUIRES, totalStars } from './modes/progression';
 import { decodeShot, shareUrl } from './modes/share';
 import { fmt, h, select } from './ui/dom';
+import { GLOSSARY, Tutorial } from './ui/tutorial';
 
 export type Mode = 'sandbox' | 'challenges' | 'compare';
 
@@ -54,6 +55,7 @@ export class App {
   private killTimer = 0;
   private killStatus = h('div', { class: 'killstatus hidden' });
   private killLegend = h('div', { class: 'legend kill hidden' });
+  private tutorial = new Tutorial();
   section: SectionMode = 'shot';
   tank!: TankView;
   vstate!: VehicleState;
@@ -105,7 +107,13 @@ export class App {
     );
     this.aimMarker.renderOrder = 21;
     this.ctx.scene.add(this.aimLine, this.aimMarker);
-    this.ui.append(this.gunner.overlay, this.topbar, this.left, this.right, this.comparePanel, this.log, this.timeline, this.legend, this.killLegend, this.killStatus, this.overlay);
+    this.ui.append(this.gunner.overlay, this.topbar, this.left, this.right, this.comparePanel, this.log, this.timeline, this.legend, this.killLegend, this.killStatus, this.overlay, this.tutorial.el);
+    // Panels collapse when their heading is clicked (essential on phones).
+    for (const panel of [this.left, this.right, this.comparePanel]) {
+      panel.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).tagName === 'H2') panel.classList.toggle('collapsed');
+      });
+    }
     this.buildLegend();
     this.ctx.scene.add(this.killOverlay.group);
     this.loadVehicle(this.vehicleId);
@@ -114,6 +122,7 @@ export class App {
     this.renderTopbar();
     this.loadFromHash();
     window.addEventListener('hashchange', () => this.loadFromHash());
+    if (!location.hash) this.tutorial.maybeShow();
     requestAnimationFrame(this.frame);
   }
 
@@ -605,6 +614,7 @@ export class App {
       tab('sandbox', 'Sandbox'),
       tab('challenges', 'Challenges'),
       tab('compare', 'Compare Rounds'),
+      h('button', { class: 'help', title: 'Show the walkthrough', onclick: () => this.tutorial.show() }, '?'),
     );
   }
 
@@ -881,10 +891,10 @@ export class App {
     this.left.replaceChildren(
       h('h2', {}, this.mode === 'compare' ? 'Compare Rounds' : this.challenge ? 'Challenge' : 'Protection Analysis'),
       this.challengeBox() ?? '',
-      h('label', {}, 'Target'),
+      label('Target'),
       target,
       h('div', { class: 'desc' }, this.vehicle.description),
-      h('label', {}, 'Round type'),
+      label('Round type'),
       select(families.map((f) => ({ value: f, label: f })), fam, (f) => {
         this.roundId = allowed.find((x) => x.family === f)!.id;
         this.renderLeft();
@@ -903,11 +913,11 @@ export class App {
         stat('Mass', `${r.mass} kg`),
         stat('Filler', r.filler ? `${r.filler} kg` : '—'),
       ),
-      h('label', {}, 'Distance'),
+      label('Distance'),
       h('div', { class: 'row' }, dist, distVal),
-      h('label', {}, 'Turret traverse [Q/E]'),
+      label('Turret traverse [Q/E]'),
       h('div', { class: 'row' }, tur, turVal),
-      h('div', { class: 'row big' }, h('span', {}, 'Penetration'), penVal),
+      h('div', { class: 'row big tip', title: GLOSSARY.Penetration }, h('span', {}, 'Penetration'), penVal),
       h('label', { class: 'check' }, cam, ' Respect camera angle'),
       angleCtl,
       this.aimBox,
@@ -1070,5 +1080,12 @@ const starText = (n: number) =>
   h('span', { class: 'starset' }, ...[0, 1, 2].map((i) => h('i', { class: i < n ? 'full' : '' }, i < n ? '★' : '☆')));
 
 function stat(k: string, v: string) {
-  return h('div', { class: 'stat' }, h('span', { class: 'k' }, k), h('span', { class: 'v' }, v));
+  const tip = GLOSSARY[k];
+  return h('div', { class: `stat ${tip ? 'tip' : ''}`, title: tip }, h('span', { class: 'k' }, k), h('span', { class: 'v' }, v));
+}
+
+/** Section label with a glossary tooltip when one exists. */
+function label(text: string, cls = '') {
+  const tip = GLOSSARY[text];
+  return h('label', { class: `${cls} ${tip ? 'tip' : ''}`.trim(), title: tip }, text);
 }
