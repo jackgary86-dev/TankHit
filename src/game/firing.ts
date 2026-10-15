@@ -75,6 +75,7 @@ export function showShot(app: App, i: number, play: boolean) {
   app.spent.setCurrent(i);
   app.ctx.scene.add(app.shotView.group);
   app.replayT = play ? 0 : shot.duration;
+  app.skipHold();
   app.playing = play;
   app.ride = -1;
   if (play && app.autoCam) app.frameImpact(shot);

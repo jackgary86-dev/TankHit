@@ -4,6 +4,7 @@ import type { App } from '../app';
 export function bindInput(app: App) {
   const el = app.ctx.renderer.domElement;
   el.addEventListener('pointerdown', (e) => {
+    app.skipHold();
     app.downAt = { x: e.clientX, y: e.clientY };
     app.camGoal = null;
   });
@@ -37,6 +38,7 @@ export function bindInput(app: App) {
 }
 
 export function onKey(app: App, e: KeyboardEvent) {
+  app.skipHold();
   const target = e.target as HTMLElement | null;
   if (target?.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'range') return;
   const k = e.key.toLowerCase();

@@ -23,15 +23,16 @@ export function stepShot(app: App, d: number) {
 /** Play sound cues for replay events crossed between the previous and current replay time. */
 export function playSounds(_app: App, shot: ShotResult, from: number, to: number) {
   const crossed = (t: number) => t > from && t <= to;
-  if (from <= 0 && to > 0) sfx.fire();
+  const cal = roundById(shot.input.roundId).caliber;
+  if (from <= 0 && to > 0) sfx.fire(cal);
   for (const imp of shot.impacts) {
     if (!crossed(imp.t)) continue;
     const k = Math.min(1, ((imp.penMm ?? 100) / 500) * 0.7 + 0.3);
-    if (imp.kind === 'pen') sfx.pen(k);
-    else if (imp.kind === 'nonpen') sfx.nonpen(k);
-    else if (imp.kind === 'ricochet') sfx.ricochet(k);
-    else if (imp.kind === 'shatter') sfx.nonpen(k);
-    else sfx.blast();
+    if (imp.kind === 'pen') sfx.pen(k, cal);
+    else if (imp.kind === 'nonpen') sfx.nonpen(k, cal);
+    else if (imp.kind === 'ricochet') sfx.ricochet(k, cal);
+    else if (imp.kind === 'shatter') sfx.nonpen(k, cal);
+    else sfx.blast(cal);
   }
   for (const e of shot.bigEvents) {
     if (!crossed(e.t)) continue;

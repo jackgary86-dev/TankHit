@@ -60,6 +60,10 @@ export class App {
   autoCam = true;
   /** Sandbox only: shots land exactly where aimed (analysis). Off, and in every other mode, dispersion applies. */
   perfectAim = true;
+  /** Half-second slow-motion hold when a shot matters (first penetration, cook-off); any key skips it. */
+  impactSlowMo = true;
+  private holdUntil = 0;
+  private holdFired = new Set<string>();
   /** The player's own vehicle (duels, 'threat to me'); remembered per browser. */
   myVehicleId = (() => { try { return localStorage.getItem('tankhit.myVehicle') ?? 't34-85'; } catch { return 't34-85'; } })();
   /** Threat mode: the kill map is pointed at *my* tank for the chosen enemy round, range and hull angle. */
@@ -194,6 +198,11 @@ export class App {
     this.renderLog();
   }
 
+  /** Any key or click skips the contact slow-mo. */
+  skipHold() {
+    this.holdUntil = 0;
+  }
+
   showDuelPicker = () => MduelPanel.showDuelPicker(this);
   showDailyPicker = () => MdailyPanel.showDailyPicker(this);
   renderDuelPanel = () => MduelPanel.renderDuelPanel(this);
@@ -226,7 +235,18 @@ export class App {
     const shot = this.shots[this.current];
     if (shot && this.playing) {
       const before = this.replayT;
-      this.replayT += dt * this.speed;
+      const holding = this.impactSlowMo && now < this.holdUntil;
+      this.replayT += dt * this.speed * (holding ? 0.12 : 1);
+      // Start a hold the first time the replay crosses a moment that matters.
+      if (this.impactSlowMo && !holding) {
+        for (const ev of [...shot.impacts.filter((i) => i.kind === 'pen').slice(0, 1).map((i) => ({ t: i.t, key: 'pen' })), ...shot.bigEvents.filter((e) => e.kind === 'detonation' || e.kind === 'blowout').map((e) => ({ t: e.t, key: e.kind }))]) {
+          const key = `${this.current}:${ev.key}`;
+          if (before < ev.t && this.replayT >= ev.t && !this.holdFired.has(key)) {
+            this.holdFired.add(key);
+            this.holdUntil = now + 500;
+          }
+        }
+      }
       this.playSounds(shot, before === 0 ? -1 : before, this.replayT);
       if (this.replayT >= shot.duration) {
         this.replayT = shot.duration;

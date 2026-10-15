@@ -135,6 +135,7 @@ export function renderLeft(app: App) {
         : '',
       h('button', { class: isReadableSize() ? 'on' : '', title: 'Inflate small shells for readability instead of true scale', onclick: () => app.toggleReadableSize() }, 'Readable shells'),
       h('button', { class: muted ? '' : 'on', onclick: () => app.toggleMute() }, muted ? 'Sound off [M]' : 'Sound on [M]'),
+      h('button', { class: app.impactSlowMo ? 'on' : '', title: 'Half-second slow-motion hold at the first penetration and at cook-offs; any key skips it', onclick: () => { app.impactSlowMo = !app.impactSlowMo; app.renderLeft(); } }, 'Impact slow-mo'),
     ),
     h('div', { class: 'hint' }, 'Drag to orbit · click armor to lock aim · Space to fire'),
   );
