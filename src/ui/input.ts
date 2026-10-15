@@ -44,7 +44,7 @@ export function onKey(app: App, e: KeyboardEvent) {
     e.preventDefault();
     app.fire();
   } else if (k === 'x') pressViewKey(app, 'xray');
-  else if (k === 'c') pressViewKey(app, 'cutaway');
+  else if (k === 'c') pressViewKey(app, e.shiftKey ? 'cutaway' : 'cut');
   else if (k === 'escape') app.clearAim();
   else if (k === 'p' || k === 'enter') app.togglePlay();
   else if (k === 'a') app.stepShot(-1);

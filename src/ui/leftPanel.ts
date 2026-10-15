@@ -117,7 +117,7 @@ export function renderLeft(app: App) {
     h('div', { class: 'segmented' },
       ...VIEW_MODES.map((m) =>
         h('button', { class: viewMode(app) === m.id ? 'on' : '', title: m.tip + (m.key ? ` [${m.key}]` : ''), onclick: () => setViewMode(app, m.id) },
-          m.id === 'cutaway' && viewMode(app) === 'cutaway' ? `Cutaway: ${app.section}` : m.label),
+          (m.id === 'cutaway' || m.id === 'cut') && viewMode(app) === m.id ? `${m.label}: ${app.section}` : m.label),
       )),
     h('div', { class: 'buttons' },
       h('button', { class: app.gunner.active ? 'on' : '', onclick: () => app.toggleGunner() }, "Gunner's sight [G]"),

@@ -37,7 +37,7 @@ interface Swappable extends THREE.Mesh {
 }
 
 /** Switch between the painted exterior and the translucent analysis view, optionally with the armor heatmap. */
-export function setXray(view: TankView, on: boolean, heat = false) {
+export function setXray(view: TankView, on: boolean, heat = false, showInterior = on) {
   for (const [id, mesh] of view.plateMeshes) {
     const m = mesh as Swappable;
     const plate = view.vehicle.plates.find((p) => p.id === id)!;
@@ -77,7 +77,7 @@ export function setXray(view: TankView, on: boolean, heat = false) {
     m.userData.xray ??= XRAY_GEAR();
     m.material = on ? m.userData.xray : m.userData.solid;
   }
-  for (const o of view.interior) o.visible = on;
+  for (const o of view.interior) o.visible = showInterior;
 }
 
 /** Apply a clipping plane to the shell (plates, edges and running gear) – interior stays whole. */

@@ -34,7 +34,8 @@ Releases: push a tag like `v0.2.0` and the `Release installers` workflow builds 
 | Space | Fire (or Compare) |
 | Esc | Clear aim |
 | X | X-ray view (again: back to Painted) |
-| C | Cutaway view: X-ray with a section plane along the shot; press again to cut facing the camera |
+| C | Cut view: the painted tank sliced open along the shot with solid, layered cross-sections; press again to cut facing the camera |
+| Shift+C | Cutaway view: X-ray with the section plane |
 | H | Armour map view: plates coloured by thickness |
 | K | Kill-map view: knock-out probability across the silhouette (Monte-Carlo, computed in a worker) |
 | G | Gunner's sight: real shell drop, time of flight, dispersion; drag to traverse, wheel to zoom |

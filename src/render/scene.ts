@@ -14,7 +14,7 @@ export interface SceneCtx {
 }
 
 export function createScene(container: HTMLElement): SceneCtx {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, stencil: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(container.clientWidth, container.clientHeight);
   renderer.shadowMap.enabled = true;
@@ -48,7 +48,9 @@ export function createScene(container: HTMLElement): SceneCtx {
 
   scene.add(createGround());
 
-  const composer = new EffectComposer(renderer);
+  // The default composer target has no stencil buffer; the capped section cut needs one.
+  const target = new THREE.WebGLRenderTarget(container.clientWidth, container.clientHeight, { type: THREE.HalfFloatType, stencilBuffer: true, samples: 4 });
+  const composer = new EffectComposer(renderer, target);
   composer.addPass(new RenderPass(scene, camera));
   const bloom = new UnrealBloomPass(new THREE.Vector2(container.clientWidth, container.clientHeight), 0.55, 0.45, 0.82);
   composer.addPass(bloom);

@@ -3,6 +3,7 @@ import { roundById } from './data/rounds';
 import { VEHICLES, vehicleById } from './data/vehicles';
 import { DamageDecals } from './render/decals';
 import { SpentRounds } from './render/spent';
+import { SectionCaps } from './render/caps';
 import { GunnerView } from './render/gunner';
 import { KillOverlay } from './render/killOverlay';
 import { createScene, type SceneCtx } from './render/scene';
@@ -51,6 +52,7 @@ export class App {
   gunner = new GunnerView();
   decals!: DamageDecals;
   spent!: SpentRounds;
+  caps!: SectionCaps;
   autoCam = true;
   camGoal: { pos: THREE.Vector3; target: THREE.Vector3 } | null = null;
   lastAtMuzzle = false;
@@ -141,6 +143,7 @@ export class App {
 
   loadVehicle(id: string) {
     if (this.tank) disposeTank(this.tank);
+    this.caps?.dispose();
     this.decals?.clear();
     this.killOverlay.clear();
     this.shotView?.dispose();
@@ -150,6 +153,8 @@ export class App {
     this.decals = new DamageDecals(this.tank);
     this.spent?.clear();
     this.spent = new SpentRounds(this.tank);
+    this.caps = new SectionCaps(this.tank);
+    this.ctx.scene.add(this.caps.group);
     this.ctx.scene.add(this.tank.root);
     setXray(this.tank, this.xray, this.heat);
     this.resetDamage();

@@ -27,7 +27,7 @@ const STEPS: { title: string; body: string }[] = [
   { title: 'Angles', body: 'By default the shot travels along your camera\'s line of sight – orbit to change the angle. Untick "Respect camera angle" to dial yaw and pitch directly. Q/E or the slider traverses the turret.' },
   { title: 'Fire and replay', body: 'Space fires. The replay plays in slow motion: scrub the timeline, change speed, ride the shot path with W/S, switch shots with A/D. V toggles the auto camera.' },
   { title: 'Reading the results', body: 'Green ring = penetration, red = stopped, orange = ricochet. Spall is drawn as yellow streaks; gel dummies show wound channels and turn dark when a crewman is out. Ammo glows before it burns or detonates.' },
-  { title: 'Views', body: 'One control picks the view: Painted, X-ray (X), Cutaway (C – press again to cut facing the camera), Armour map (H) and Kill map (K). Pressing the active view\'s key returns to Painted.' },
+  { title: 'Views', body: 'One control picks the view: Painted, Cut (C – the painted tank sliced open with solid cross-sections; press again to cut facing the camera), X-ray (X), Cutaway (Shift+C – X-ray with the cut), Armour map (H) and Kill map (K). Pressing the active view\'s key returns to Painted.' },
   { title: 'The sight', body: 'G drops you into a gunner\'s sight with real shell drop, time of flight and dispersion.' },
   { title: 'Modes', body: 'Sandbox is free fire. Challenges are puzzles with star ratings that unlock more puzzles. Compare Rounds fires several rounds at the same point side by side. Share link reproduces any shot for a friend.' },
 ];
