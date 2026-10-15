@@ -33,10 +33,10 @@ Releases: push a tag like `v0.2.0` and the `Release installers` workflow builds 
 | Click armor | Lock aim point (hover previews LOS and penetration) |
 | Space | Fire (or Compare) |
 | Esc | Clear aim |
-| X | Toggle X-ray |
-| C | Section plane: off / along shot / facing camera |
-| H | Armor thickness heatmap |
-| K | Kill-probability map (Monte-Carlo, computed in a worker) |
+| X | X-ray view (again: back to Painted) |
+| C | Cutaway view: X-ray with a section plane along the shot; press again to cut facing the camera |
+| H | Armour map view: plates coloured by thickness |
+| K | Kill-map view: knock-out probability across the silhouette (Monte-Carlo, computed in a worker) |
 | G | Gunner's sight: real shell drop, time of flight, dispersion; drag to traverse, wheel to zoom |
 | Q / E | Traverse the turret |
 | V | Auto camera (frames each impact) |

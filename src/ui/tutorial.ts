@@ -25,9 +25,10 @@ const STEPS: { title: string; body: string }[] = [
   { title: 'Welcome to TankHit', body: 'An armour-penetration sandbox: pick a tank and a round, aim, fire, and watch an X-ray replay of what the shot does inside.' },
   { title: 'Aim', body: 'Hover the hull to inspect the armour under the cursor: plate thickness, impact angle, effective (LOS) thickness and your round\'s penetration, plus the knock-out chance. Click to lock the aim; Esc clears it.' },
   { title: 'Angles', body: 'By default the shot travels along your camera\'s line of sight – orbit to change the angle. Untick "Respect camera angle" to dial yaw and pitch directly. Q/E or the slider traverses the turret.' },
-  { title: 'Fire and replay', body: 'Space fires. The replay plays in slow motion: scrub the timeline, change speed, ride the shot path with W/S, switch shots with A/D. X toggles X-ray, C the cutaway plane, V the auto camera.' },
+  { title: 'Fire and replay', body: 'Space fires. The replay plays in slow motion: scrub the timeline, change speed, ride the shot path with W/S, switch shots with A/D. V toggles the auto camera.' },
   { title: 'Reading the results', body: 'Green ring = penetration, red = stopped, orange = ricochet. Spall is drawn as yellow streaks; gel dummies show wound channels and turn dark when a crewman is out. Ammo glows before it burns or detonates.' },
-  { title: 'Maps and the sight', body: 'H shows an armour-thickness heatmap. K computes a kill-probability map across the whole silhouette. G drops you into a gunner\'s sight with real shell drop, time of flight and dispersion.' },
+  { title: 'Views', body: 'One control picks the view: Painted, X-ray (X), Cutaway (C – press again to cut facing the camera), Armour map (H) and Kill map (K). Pressing the active view\'s key returns to Painted.' },
+  { title: 'The sight', body: 'G drops you into a gunner\'s sight with real shell drop, time of flight and dispersion.' },
   { title: 'Modes', body: 'Sandbox is free fire. Challenges are puzzles with star ratings that unlock more puzzles. Compare Rounds fires several rounds at the same point side by side. Share link reproduces any shot for a friend.' },
 ];
 

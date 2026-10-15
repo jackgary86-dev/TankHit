@@ -63,7 +63,7 @@ export class App {
   killStatus = h('div', { class: 'killstatus hidden' });
   killLegend = h('div', { class: 'legend kill hidden' });
   tutorial = new Tutorial();
-  section: SectionMode = 'shot';
+  section: SectionMode = 'off';
   tank!: TankView;
   vstate!: VehicleState;
   shots: ShotResult[] = [];

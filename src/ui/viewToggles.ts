@@ -26,6 +26,45 @@ export function buildLegend(app: App) {
   );
 }
 
+export type ViewMode = 'painted' | 'xray' | 'cutaway' | 'armour' | 'killmap';
+export const VIEW_MODES: { id: ViewMode; label: string; key: string; tip: string }[] = [
+  { id: 'painted', label: 'Painted', key: '', tip: 'The tank as it looks from outside' },
+  { id: 'xray', label: 'X-ray', key: 'X', tip: 'See the crew, ammunition and modules through the armour' },
+  { id: 'cutaway', label: 'Cutaway', key: 'C', tip: 'X-ray with a section plane along the shot (press C again to cut facing the camera)' },
+  { id: 'armour', label: 'Armour map', key: 'H', tip: 'Plates coloured by thickness (KE RHA-equivalent)' },
+  { id: 'killmap', label: 'Kill map', key: 'K', tip: 'Chance of a knock-out across the whole silhouette for the current round' },
+];
+
+/** The one view the player is in, derived from the underlying flags so they can never disagree. */
+export function viewMode(app: App): ViewMode {
+  if (app.killMap) return 'killmap';
+  if (app.heat) return 'armour';
+  if (app.xray && app.section !== 'off') return 'cutaway';
+  if (app.xray) return 'xray';
+  return 'painted';
+}
+
+/** Switch views; every mode sets every flag, so no invalid combination can be reached. */
+export function setViewMode(app: App, mode: ViewMode) {
+  const was = viewMode(app);
+  if (app.killMap && mode !== 'killmap') app.toggleKillMap();
+  app.heat = mode === 'armour';
+  app.xray = mode === 'xray' || mode === 'cutaway' || mode === 'killmap';
+  if (mode === 'cutaway') app.section = was === 'cutaway' ? (app.section === 'shot' ? 'camera' : 'shot') : 'shot';
+  else app.section = 'off';
+  setXray(app.tank, app.xray, app.heat);
+  app.legend.classList.toggle('hidden', !app.heat);
+  if (mode === 'killmap' && !app.killMap) app.toggleKillMap();
+  app.renderLeft();
+}
+
+/** Mode keys: select the mode, or press the active mode's key again to go back to Painted. */
+export function pressViewKey(app: App, mode: ViewMode) {
+  const cur = viewMode(app);
+  if (cur === mode && mode !== 'cutaway') setViewMode(app, 'painted');
+  else setViewMode(app, mode);
+}
+
 export function toggleXray(app: App) {
   app.xray = !app.xray;
   setXray(app.tank, app.xray, app.heat);

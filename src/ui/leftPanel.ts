@@ -8,6 +8,7 @@ import { penetrationAt } from '../sim/penetration';
 import { v3 } from '../sim/vec';
 import { fmt, h, select } from './dom';
 import { GLOSSARY } from './tutorial';
+import { setViewMode, VIEW_MODES, viewMode } from './viewToggles';
 import { label, stat } from './widgets';
 import type { App } from '../app';
 
@@ -112,11 +113,13 @@ export function renderLeft(app: App) {
       h('button', { onclick: () => app.clearAim() }, 'Clear aim [Esc]'),
       h('button', { onclick: () => app.resetDamage() }, 'Repair vehicle'),
     ),
+    label('View'),
+    h('div', { class: 'segmented' },
+      ...VIEW_MODES.map((m) =>
+        h('button', { class: viewMode(app) === m.id ? 'on' : '', title: m.tip + (m.key ? ` [${m.key}]` : ''), onclick: () => setViewMode(app, m.id) },
+          m.id === 'cutaway' && viewMode(app) === 'cutaway' ? `Cutaway: ${app.section}` : m.label),
+      )),
     h('div', { class: 'buttons' },
-      h('button', { class: app.xray ? 'on' : '', onclick: () => app.toggleXray() }, 'X-ray [X]'),
-      h('button', { class: app.section !== 'off' ? 'on' : '', onclick: () => app.cycleSection() }, `Section: ${app.section} [C]`),
-      h('button', { class: app.heat ? 'on' : '', onclick: () => app.toggleHeat() }, 'Armor map [H]'),
-      h('button', { class: app.killMap ? 'on' : '', onclick: () => app.toggleKillMap() }, 'Kill map [K]'),
       h('button', { class: app.gunner.active ? 'on' : '', onclick: () => app.toggleGunner() }, "Gunner's sight [G]"),
       h('button', { class: app.autoCam ? 'on' : '', onclick: () => app.toggleAutoCam() }, 'Auto camera [V]'),
       h('button', { class: isReadableSize() ? 'on' : '', title: 'Inflate small shells for readability instead of true scale', onclick: () => app.toggleReadableSize() }, 'Readable shells'),

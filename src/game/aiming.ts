@@ -127,6 +127,11 @@ export function createAimGizmo(scene: THREE.Scene): { line: THREE.Line; marker: 
   dot.name = 'aimDot';
   marker.add(dot);
   marker.renderOrder = 21;
+  // Hidden until the first hover places them (the tube is a unit cylinder at the origin until then).
+  line.visible = false;
+  marker.visible = false;
+  tube.visible = false;
+  stub.visible = false;
   scene.add(line, marker);
   return { line, marker };
 }

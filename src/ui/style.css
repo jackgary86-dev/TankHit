@@ -224,3 +224,8 @@ button.share { width: auto; font-size: 11px; padding: 3px 8px; }
 
 .layers { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .layer { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+
+.segmented { display: flex; margin-top: 4px; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.segmented button { flex: 1; border: 0; border-radius: 0; border-right: 1px solid var(--line); padding: 6px 2px; font-size: 11px; background: var(--panel-2); color: var(--muted); }
+.segmented button:last-child { border-right: 0; }
+.segmented button.on { background: rgba(255,179,71,0.14); color: var(--accent); }

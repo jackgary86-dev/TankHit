@@ -1,3 +1,4 @@
+import { pressViewKey } from './viewToggles';
 import type { App } from '../app';
 
 export function bindInput(app: App) {
@@ -36,21 +37,22 @@ export function bindInput(app: App) {
 }
 
 export function onKey(app: App, e: KeyboardEvent) {
-  if ((e.target as HTMLElement).tagName === 'INPUT' && (e.target as HTMLInputElement).type !== 'range') return;
+  const target = e.target as HTMLElement | null;
+  if (target?.tagName === 'INPUT' && (target as HTMLInputElement).type !== 'range') return;
   const k = e.key.toLowerCase();
   if (k === ' ') {
     e.preventDefault();
     app.fire();
-  } else if (k === 'x') app.toggleXray();
-  else if (k === 'c') app.cycleSection();
+  } else if (k === 'x') pressViewKey(app, 'xray');
+  else if (k === 'c') pressViewKey(app, 'cutaway');
   else if (k === 'escape') app.clearAim();
   else if (k === 'p' || k === 'enter') app.togglePlay();
   else if (k === 'a') app.stepShot(-1);
   else if (k === 'd') app.stepShot(1);
   else if (k === 'w' || k === 's') app.rideShot((k === 'w' ? 1 : -1) * (e.shiftKey ? 0.6 : 0.2));
   else if (k === 'r') app.resetCamera();
-  else if (k === 'h') app.toggleHeat();
-  else if (k === 'k') app.toggleKillMap();
+  else if (k === 'h') pressViewKey(app, 'armour');
+  else if (k === 'k') pressViewKey(app, 'killmap');
   else if (k === 'g') app.toggleGunner();
   else if (k === 'v') app.toggleAutoCam();
   else if (k === 'q' || k === 'e') app.setTurretYaw(app.turretYaw + (k === 'e' ? 5 : -5));
