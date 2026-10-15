@@ -1,0 +1,19 @@
+:root {
+  --panel: rgba(28, 34, 42, 0.86);
+  --panel-2: rgba(10, 12, 16, 0.92);
+  --line: rgba(255, 255, 255, 0.08);
+  --text: #e3e8ee;
+  --muted: #8e9aa8;
+  --accent: #ffb347;
+  --good: #4cd964;
+  --warn: #ffd23f;
+  --bad: #ff4b3e;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: var(--text);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #15181c; }
+#viewport { position: fixed; inset: 0; }
+#viewport canvas { display: block; }
+#ui { position: fixed; inset: 0; pointer-events: none; }
+#ui > * { pointer-events: auto; }
