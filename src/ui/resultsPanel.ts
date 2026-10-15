@@ -1,4 +1,5 @@
 import { roundById } from '../data/rounds';
+import { narrate } from '../sim/narrative';
 import { STATION_LOSS, woundLevel } from '../sim/state';
 import { fmt, h } from './dom';
 import { stat, verdictClass } from './widgets';
@@ -29,6 +30,7 @@ export function renderRight(app: App) {
   app.right.replaceChildren(
     h('div', { class: 'row' }, h('h2', {}, `Shot ${app.current + 1}`), h('button', { class: 'share', onclick: () => app.shareCurrent() }, 'Share link')),
     h('div', { class: `verdict ${sev}` }, s.verdict),
+    h('p', { class: 'story' }, narrate(shot, v, roundById(shot.input.roundId)).text),
     h('div', { class: 'stats' },
       stat('Round', roundById(shot.input.roundId).name),
       stat('Distance', `${shot.input.distance} m`),

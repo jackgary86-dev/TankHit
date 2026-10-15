@@ -1,4 +1,5 @@
 import { roundById } from '../data/rounds';
+import { narrate } from '../sim/narrative';
 import { sfx } from '../render/audio';
 import type { ShotResult } from '../sim/types';
 import { h } from './dom';
@@ -57,9 +58,12 @@ export function renderTimeline(app: App) {
   );
   // Event ticks along the scrubber.
   const ticks = h('div', { class: 'ticks' });
-  const mark = (t: number, cls: string) => ticks.append(h('i', { class: cls, style: `left:${(100 * t) / shot.duration}%` }));
-  for (const imp of shot.impacts) mark(imp.t, imp.kind);
-  for (const e of shot.bigEvents) mark(e.t, e.kind);
+  // Chapters from the shot narrative: click to seek.
+  const story = narrate(shot, app.vehicle, roundById(shot.input.roundId));
+  for (const c of story.chapters) {
+    if (c.kind === 'end') continue;
+    ticks.append(h('button', { class: `chap ${c.kind}`, style: `left:${(100 * c.t) / shot.duration}%`, title: c.label, onclick: () => { app.playing = false; app.replayT = c.t; app.syncTimeline(); } }));
+  }
   const track = h('div', { class: 'track' }, app.tlRange, ticks);
   app.timeline.replaceChildren(app.tlPlay, track, app.tlTime, ...speeds,
     h('span', { class: 'keys' }, 'P play/pause  ·  A/D switch shot  ·  W/S ride shot path (Shift = faster)  ·  R reset camera'));

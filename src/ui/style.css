@@ -229,3 +229,12 @@ button.share { width: auto; font-size: 11px; padding: 3px 8px; }
 .segmented button { flex: 1; border: 0; border-radius: 0; border-right: 1px solid var(--line); padding: 6px 2px; font-size: 11px; background: var(--panel-2); color: var(--muted); }
 .segmented button:last-child { border-right: 0; }
 .segmented button.on { background: rgba(255,179,71,0.14); color: var(--accent); }
+
+.story { margin: 8px 0 0; font-size: 12px; line-height: 1.4; color: var(--text); }
+.timeline .ticks { pointer-events: auto; }
+.timeline .ticks .chap { position: absolute; top: -5px; width: 9px; height: 11px; padding: 0; border: 0; border-radius: 2px; transform: translateX(-4px); cursor: pointer; background: #fff; }
+.timeline .ticks .chap.impact { background: var(--good); }
+.timeline .ticks .chap.crew { background: var(--bad); }
+.timeline .ticks .chap.module { background: #ff8c1a; }
+.timeline .ticks .chap.ammo { background: var(--warn); }
+.timeline .ticks .chap.big { background: #ff3b2f; box-shadow: 0 0 6px #ff3b2f; }
