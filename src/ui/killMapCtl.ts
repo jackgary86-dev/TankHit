@@ -30,7 +30,7 @@ export function pollKillMap(app: App) {
 
 export function requestKillMap(app: App, dir: THREE.Vector3) {
   if (!app.killWorker) {
-    app.killWorker = new Worker(new URL('./sim/killmap.worker.ts', import.meta.url), { type: 'module' });
+    app.killWorker = new Worker(new URL('../sim/killmap.worker.ts', import.meta.url), { type: 'module' });
     app.killWorker.onmessage = (e: MessageEvent<KillMapMessage>) => app.onKillMessage(e.data);
   }
   const id = ++app.killReq;
