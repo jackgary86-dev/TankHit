@@ -39,7 +39,8 @@ export function cycleSection(app: App) {
 
 export function updateSection(app: App) {
   let plane: THREE.Plane | null = null;
-  if (app.gunner.active) {
+  // The cutaway only makes sense in X-ray; a clipped painted hull just looks like the tank is missing a piece.
+  if (app.gunner.active || !app.xray) {
     setSectionPlane(app.tank, null);
     return;
   }
