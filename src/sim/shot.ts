@@ -449,6 +449,7 @@ export class ShotSim {
       let chance = byPenetrator ? 0.8 : Math.min(0.6, amount / 90);
       chance *= 0.6 + Math.min(1, m.ammo.propellant / 6) * 0.6;
       if (this.r.penMaterial === 'du') chance += 0.15; // pyrophoric DU fragments
+      if (this.v.racks.find((k) => k.id === m.ammo!.rack)?.wet) chance *= 0.15; // water jackets quench most ignitions
       if (this.rng() < chance) this.ignitions.set(m.id, t);
     }
     if (m.type === 'fuel' && !this.fuelFire) {
@@ -482,7 +483,8 @@ export class ShotSim {
         const d = dist(c, centre(n));
         const sameRack = n.ammo!.rack === m.ammo!.rack;
         if (d > (sameRack ? 0.32 : 0.25)) continue;
-        if (this.rng() < (sameRack ? 0.62 : 0.3)) queue.push({ id: n.id, t: t + 0.18 + this.rng() * 0.45 });
+        const wet = v.racks.find((k) => k.id === n.ammo!.rack)?.wet ? 0.12 : 1;
+        if (this.rng() < (sameRack ? 0.62 : 0.3) * wet) queue.push({ id: n.id, t: t + 0.18 + this.rng() * 0.45 });
       }
     }
     for (const [id, t] of lit) {

@@ -277,7 +277,7 @@ export function ammoRow(s: AmmoRowSpec): Module[] {
   return out;
 }
 
-export const rack = (id: string, name: string, detonateAt: number, isolated = false): AmmoRack => ({ id, name, isolated, detonateAt });
+export const rack = (id: string, name: string, detonateAt: number, isolated = false, wet = false): AmmoRack => ({ id, name, isolated, detonateAt, wet });
 
 // ---------------------------------------------------------------- crew
 

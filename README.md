@@ -14,7 +14,8 @@ npm run build   # production build in dist/
 ## Modes
 
 - **Sandbox** – free fire, every round unlocked; damage carries over until you hit *Repair vehicle*.
-- **Challenges** – six puzzles with fixed rounds/range and a shot limit; 1–3 stars by shots used.
+- **Challenges** – eleven puzzles with fixed rounds/range and a shot limit; 1–3 stars by shots used, and stars unlock the later puzzles.
+- **Share link** – every shot can be reproduced from its URL (vehicle, round, range, aim, seed, turret yaw).
 - **Compare Rounds** – fire up to four rounds at the same point on a fresh tank with the same seed and compare side by side.
 
 ## Controls
@@ -28,6 +29,10 @@ npm run build   # production build in dist/
 | X | Toggle X-ray |
 | C | Section plane: off / along shot / facing camera |
 | H | Armor thickness heatmap |
+| K | Kill-probability map (Monte-Carlo, computed in a worker) |
+| G | Gunner's sight: real shell drop, time of flight, dispersion; drag to traverse, wheel to zoom |
+| Q / E | Traverse the turret |
+| V | Auto camera (frames each impact) |
 | P / Enter | Play / pause replay |
 | A / D | Previous / next shot |
 | W / S (+Shift) | Ride the camera along the shot path |
@@ -36,7 +41,7 @@ npm run build   # production build in dist/
 
 ## Vehicles
 
-T-34-85, IS-3, T-72B and M1 Abrams – each is a data file in `src/data/vehicles/` built with the helpers in `src/data/builder.ts`. Add a tank by adding a file and registering it in `src/data/vehicles/index.ts`.
+M4A3 (76) W Sherman, T-34-85, Tiger I, IS-3, T-72B, M1 Abrams and Leopard 2A4 – each is a data file in `src/data/vehicles/` built with the helpers in `src/data/builder.ts`. Add a tank by adding a file and registering it in `src/data/vehicles/index.ts`.
 
 ## Simulation
 
@@ -46,6 +51,7 @@ T-34-85, IS-3, T-72B and M1 Abrams – each is a data file in `src/data/vehicles
 - **Chemical** – HEAT jets (standoff loss, ERA, composite CE multipliers), HESH scabbing, APHE fuze delay bursts, HE blast and thin-plate penetration.
 - **Spall** – cones raycast through modules and gel dummies with energy loss per hit.
 - **Crew** – zone HP, wound channels, incapacitation and station loss.
-- **Cook-off** – ignition rolls, propagation through racks, detonation or blow-out-panel venting.
+- **Cook-off** – ignition rolls, propagation through racks, detonation or blow-out-panel venting; wet stowage quenches most ignitions.
+- **Ballistics** – point-mass arc with drag for the gunner's sight; superelevation solved per range.
 
 See [PROMPT.md](PROMPT.md) for the original design brief.

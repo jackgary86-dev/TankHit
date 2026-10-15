@@ -88,6 +88,8 @@ export interface AmmoRack {
   isolated: boolean;
   /** Ignited rounds needed before the rack detonates. */
   detonateAt: number;
+  /** Water-jacketed ("wet") stowage: much harder to ignite and slower to spread. */
+  wet?: boolean;
 }
 
 export type CrewRole = 'driver' | 'gunner' | 'commander' | 'loader' | 'radioman';
