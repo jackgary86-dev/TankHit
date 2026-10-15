@@ -81,12 +81,19 @@ export function hullPlates(h: HullSpec): Plate[] {
   ];
   const plates: Plate[] = [];
   if (h.pike) {
+    // Two angled glacis halves meeting in a ridge; built from planar triangles.
     const tip = v3(L2, h.noseY, 0);
-    const tipTop = v3(xUfp + h.ufp.run * 0.35, top, 0);
-    plates.push(
-      plate('h-ufp-l', 'Upper front plate (left)', 'hull', [tip, v3(L2, h.noseY, W2), v3(xUfp, top, W2), tipTop], h.ufp, inside, mat),
-      plate('h-ufp-r', 'Upper front plate (right)', 'hull', [tip, tipTop, v3(xUfp, top, -W2), v3(L2, h.noseY, -W2)], h.ufp, inside, mat),
-    );
+    const ridge = v3(xUfp + 0.45, top, 0);
+    for (const [side, z] of [['l', W2], ['r', -W2]] as const) {
+      const nose = v3(L2, h.noseY, z);
+      const corner = v3(xUfp, top, z);
+      const label = side === 'l' ? 'left' : 'right';
+      plates.push(
+        plate(`h-ufp-${side}1`, `Upper front plate (${label})`, 'hull', [tip, nose, corner], h.ufp, inside, mat),
+        plate(`h-ufp-${side}2`, `Upper front plate (${label}, pike)`, 'hull', [tip, corner, ridge], h.ufp, inside, mat),
+      );
+    }
+    plates.push(plate('h-ufp-top', 'Hull roof (front)', 'hull', [v3(xUfp, top, W2), ridge, v3(xUfp, top, -W2)], h.roof, inside, mat));
   } else {
     plates.push(
       plate('h-ufp', 'Upper front plate', 'hull', [v3(L2, h.noseY, -W2), v3(L2, h.noseY, W2), v3(xUfp, top, W2), v3(xUfp, top, -W2)], h.ufp, inside, mat),
