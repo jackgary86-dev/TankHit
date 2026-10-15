@@ -60,6 +60,15 @@ export class ShotView {
     }
     this.buildWounds();
     this.buildBigEvents();
+    for (const imp of shot.impacts) {
+      if (imp.kind !== 'explode' && imp.kind !== 'scab' && imp.kind !== 'era') continue;
+      const blast = new THREE.Mesh(
+        new THREE.SphereGeometry(1, 20, 14),
+        new THREE.MeshBasicMaterial({ color: imp.kind === 'era' ? 0xfff0a0 : 0xffa040, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }),
+      );
+      blast.position.set(imp.point.x, imp.point.y, imp.point.z);
+      this.add('blast', imp.t, blast);
+    }
   }
 
   private buildBigEvents() {
@@ -132,6 +141,10 @@ export class ShotView {
         jet.scale.set(flick, Math.min(1, age * 4) * life + 0.01, flick);
         (jet.material as THREE.MeshBasicMaterial).opacity = 0.8 * life;
         light.intensity = 25 * life * flick;
+      } else if (f.kind === 'blast') {
+        const m = f.obj as THREE.Mesh;
+        m.scale.setScalar(0.05 + Math.min(0.55, age * 2.5));
+        (m.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.85 - age * 1.6);
       } else if (f.kind === 'fire') {
         const light = f.obj.children[0] as THREE.PointLight;
         const glow = f.obj.children[1] as THREE.Mesh;
@@ -272,6 +285,15 @@ export function applyDamage(view: TankView, shot: ShotResult | null, T: number) 
         mat.emissive.setRGB(0.25 + 0.15 * Math.sin(T * 30), 0.06, 0);
       }
     }
+  }
+  // Reactive armor blocks vanish once they fire.
+  for (const p of v.plates) {
+    if (p.kind !== 'era') continue;
+    const spentBefore = !!base?.eraSpent[p.id];
+    const firedAt = shot?.impacts.find((i) => i.kind === 'era' && i.plateId === p.id)?.t;
+    const visible = !spentBefore && !(firedAt !== undefined && T >= firedAt);
+    view.plateMeshes.get(p.id)!.visible = visible;
+    view.plateEdges.get(p.id)!.visible = visible && !!view.plateEdges.get(p.id)!.userData.xray;
   }
   applyCrew(view, shot, T);
 }

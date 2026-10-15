@@ -62,6 +62,21 @@ export function collectHits(v: Vehicle, s: VehicleState, origin: Vec3, dir: Vec3
   return out.sort((a, b) => a.t - b.t);
 }
 
+/**
+ * Multiplier applied to a penetrator's remaining penetration by an explosive reactive armor block.
+ * Blocks of 20 mm+ are treated as heavy (Kontakt-5 style) and also bite long rods.
+ */
+export function eraFactor(p: Plate, r: Round): number {
+  const heavy = p.mm >= 20;
+  if (r.family === 'HEAT') return heavy ? 0.4 : 0.45;
+  if (r.family === 'APFSDS') return heavy ? 0.75 : 0.95;
+  if (r.family === 'AP' || r.family === 'APHE') return heavy ? 0.85 : 0.97;
+  return 1;
+}
+
+/** HEAT jets lose penetration per metre travelled through air after the charge fires. */
+export const JET_AIR_LOSS = 90;
+
 /** Impact angle in degrees between the ray and the plate normal (0 = perpendicular). */
 export const impactAngle = (dir: Vec3, p: Plate) => Math.acos(Math.min(1, Math.abs(dot(dir, normalOf(p))))) / DEG;
 
@@ -83,13 +98,17 @@ export function previewShot(v: Vehicle, s: VehicleState, r: Round, origin: Vec3,
   if (!first) return null;
   const p = first.plate;
   const angleDeg = impactAngle(dir, p);
-  let losMm = losThickness(p, angleDeg, r);
-  // Count a stacked main plate behind spaced armor / ERA within 0.6 m.
+  let losMm = p.kind === 'era' ? 0 : losThickness(p, angleDeg, r);
+  let penMm = penetrationAt(r, distance);
+  // Fold ERA / spaced armor into the main plate behind it (within 0.8 m).
   if (p.kind !== 'plate') {
-    const behind = hits.find((h) => h.kind === 'plate' && h.plate.kind === 'plate' && h.t - first.t < 0.6) as typeof first | undefined;
-    if (behind) losMm += losThickness(behind.plate, impactAngle(dir, behind.plate), r);
+    if (p.kind === 'era') penMm *= eraFactor(p, r);
+    const behind = hits.find((h) => h.kind === 'plate' && h.plate.kind === 'plate' && h.t - first.t < 0.8) as typeof first | undefined;
+    if (behind) {
+      losMm += losThickness(behind.plate, impactAngle(dir, behind.plate), r);
+      if (r.family === 'HEAT') penMm -= JET_AIR_LOSS * (behind.t - first.t);
+    }
   }
-  const penMm = penetrationAt(r, distance);
   const ricochet = ricochetChance(r, angleDeg, p.mm);
   let rating: Preview['rating'];
   if (r.family === 'HESH' || r.family === 'HE') {
@@ -151,8 +170,24 @@ export class ShotSim {
     let pos = input.origin;
     let t = 0;
     let entered = false;
+    let fuzeAt = Infinity; // ray distance at which an APHE filler goes off
+    let exploded = false;
+    let exited = false;
+    if (!hits.some((h) => h.kind === 'plate')) this.trace('shell', input.origin, madd(input.origin, dir, 14), 0, SPEED.approach, P);
+    const explode = (at: number) => {
+      const point = madd(input.origin, dir, at);
+      t = this.trace('shell', pos, point, t, SPEED.shell, P);
+      pos = point;
+      exploded = true;
+      this.res.impacts.push({ t, kind: 'explode', point, normal: scale(dir, -1) });
+      this.emitFragments(point, dir, t, Math.min(90, Math.round(30 + r.filler * 400)), 100, 40 + r.filler * 250, 'frag');
+    };
 
     for (const h of hits) {
+      if (h.t > fuzeAt && !exploded) {
+        explode(fuzeAt);
+        break;
+      }
       const point = madd(input.origin, dir, h.t);
       t = this.trace(entered ? 'shell' : 'shell', pos, point, t, entered ? SPEED.shell : SPEED.approach, P);
       pos = point;
@@ -161,6 +196,12 @@ export class ShotSim {
         const angle = impactAngle(dir, p);
         const n = normalOf(p);
         const entering = dot(dir, n) < 0;
+        if (p.kind === 'era') {
+          P *= eraFactor(p, r);
+          state.eraSpent[p.id] = true;
+          this.res.impacts.push({ t, kind: 'era', point, normal: n, plateId: p.id, penMm: P, angleDeg: angle });
+          continue;
+        }
         const los = losThickness(p, angle, r);
         if (!this.firstPlate) {
           this.firstPlate = p.id;
@@ -176,12 +217,14 @@ export class ShotSim {
         if (P >= los) {
           P -= los;
           this.armorDefeated += los;
-          this.penetrated = true;
+          this.penetrated = this.penetrated || (entering && p.kind === 'plate');
           this.res.impacts.push({ t, kind: 'pen', point, normal: n, plateId: p.id, losMm: los, penMm: P + los, angleDeg: angle });
-          entered = entering ? true : entered;
-          if (entering) this.spallFromPen(madd(point, dir, 0.03), dir, t, P, p.mm);
-          if (!entering) {
-            // Leaving the vehicle: draw a short exit tracer and stop.
+          if (entering && p.kind === 'plate' && r.family === 'APHE' && fuzeAt === Infinity) fuzeAt = h.t + (r.fuzeDelay ?? 1.2);
+          entered = entering && p.kind === 'plate' ? true : entered;
+          if (entering && p.kind === 'plate') this.spallFromPen(madd(point, dir, 0.03), dir, t, P, p.mm);
+          if (!entering && entered) {
+            // Leaving the vehicle: an APHE fuze still running means over-penetration with no burst.
+            exited = true;
             this.trace('shell', point, madd(point, dir, 3), t, SPEED.approach, P);
             break;
           }
@@ -195,7 +238,158 @@ export class ShotSim {
         if (P <= 0) break;
       }
     }
+    // APHE that stopped inside (or never reached its fuze distance before stopping) goes off where it is.
+    if (fuzeAt !== Infinity && !exploded && !exited) explode(Math.min(fuzeAt, dist(input.origin, pos)));
     this.residual = Math.max(0, P);
+    return this.finish();
+  }
+
+  /** First plate (outer surface) the shell strikes, with the approach tracer drawn. */
+  private strike(): { h: Extract<HitTarget, { kind: 'plate' }>; point: Vec3; t: number; angle: number; hits: HitTarget[] } | null {
+    const { v, input, state } = this;
+    const dir = norm(input.dir);
+    const hits = collectHits(v, state, input.origin, dir);
+    const idx = hits.findIndex((h) => h.kind === 'plate');
+    if (idx < 0) {
+      this.trace('shell', input.origin, madd(input.origin, dir, 14), 0, SPEED.approach, 0);
+      return null;
+    }
+    const h = hits[idx] as Extract<HitTarget, { kind: 'plate' }>;
+    const point = madd(input.origin, dir, h.t);
+    const t = this.trace('shell', input.origin, point, 0, SPEED.approach, 1);
+    const angle = impactAngle(dir, h.plate);
+    if (!this.firstPlate) {
+      this.firstPlate = h.plate.id;
+      this.firstAngle = angle;
+      this.firstLos = h.plate.kind === 'era' ? 0 : losThickness(h.plate, angle, this.r);
+    }
+    return { h, point, t, angle, hits: hits.slice(idx) };
+  }
+
+  /** Shaped charge: the jet forms at the first plate (skirts and ERA set it off early). */
+  runHeat() {
+    const { r, state } = this;
+    const dir = norm(this.input.dir);
+    const s0 = this.strike();
+    if (!s0) return this.finish();
+    const n0 = normalOf(s0.h.plate);
+    if (this.rng() < ricochetChance(r, s0.angle, s0.h.plate.mm)) {
+      this.res.impacts.push({ t: s0.t, kind: 'ricochet', point: s0.point, normal: n0, plateId: s0.h.plate.id, angleDeg: s0.angle });
+      const refl = norm(sub(dir, scale(n0, 2 * dot(dir, n0))));
+      this.trace('ricochet', s0.point, madd(s0.point, refl, 4), s0.t, SPEED.approach, 1);
+      return this.finish();
+    }
+    let P = penetrationAt(r, this.input.distance);
+    let t = s0.t;
+    let pos = s0.point;
+    let prevT = s0.h.t;
+    let entered = false;
+    for (const h of s0.hits) {
+      P -= JET_AIR_LOSS * Math.max(0, h.t - prevT);
+      prevT = h.t;
+      if (P <= 0) break;
+      const point = madd(this.input.origin, dir, h.t);
+      t = this.trace('jet', pos, point, t, SPEED.jet, P);
+      pos = point;
+      if (h.kind === 'plate') {
+        const p = h.plate;
+        const angle = impactAngle(dir, p);
+        const n = normalOf(p);
+        const entering = dot(dir, n) < 0;
+        if (p.kind === 'era') {
+          P *= eraFactor(p, r);
+          state.eraSpent[p.id] = true;
+          this.res.impacts.push({ t, kind: 'era', point, normal: n, plateId: p.id, penMm: P, angleDeg: angle });
+          continue;
+        }
+        const los = losThickness(p, angle, r);
+        if (P >= los) {
+          P -= los;
+          this.armorDefeated += los;
+          this.penetrated = this.penetrated || (entering && p.kind === 'plate');
+          this.res.impacts.push({ t, kind: 'pen', point, normal: n, plateId: p.id, losMm: los, penMm: P + los, angleDeg: angle });
+          if (entering && p.kind === 'plate') {
+            entered = true;
+            this.spallFromPen(madd(point, dir, 0.03), dir, t, P, p.mm);
+          } else if (!entering && entered) {
+            this.trace('jet', point, madd(point, dir, Math.min(2, P / JET_AIR_LOSS)), t, SPEED.jet, P);
+            break;
+          }
+        } else {
+          this.res.impacts.push({ t, kind: 'nonpen', point, normal: n, plateId: p.id, losMm: los, penMm: P, angleDeg: angle });
+          P = 0;
+          break;
+        }
+      } else if (entered) {
+        P = this.hitInternal(h, point, dir, t, P * 0.8);
+      }
+    }
+    if (P > 0 && !entered) this.trace('jet', pos, madd(pos, dir, Math.min(1.5, P / JET_AIR_LOSS)), t, SPEED.jet, P);
+    this.residual = Math.max(0, P);
+    return this.finish();
+  }
+
+  /** High-explosive squash head: no penetration, scabs the inside face of thin homogeneous plates. */
+  runHesh() {
+    const { r, state } = this;
+    const s0 = this.strike();
+    if (!s0) return this.finish();
+    const p = s0.h.plate;
+    const n = normalOf(p);
+    if (s0.angle > 80) {
+      this.res.impacts.push({ t: s0.t, kind: 'ricochet', point: s0.point, normal: n, plateId: p.id, angleDeg: s0.angle });
+      return this.finish();
+    }
+    if (p.kind === 'era') state.eraSpent[p.id] = true;
+    const scabs = p.kind === 'plate' && !p.layers && p.mm <= r.caliber * 1.3 && s0.angle < 70;
+    if (!scabs) {
+      this.res.impacts.push({ t: s0.t, kind: 'explode', point: s0.point, normal: n, plateId: p.id, angleDeg: s0.angle, losMm: p.mm });
+      return this.finish();
+    }
+    this.penetrated = false;
+    this.res.impacts.push({ t: s0.t, kind: 'scab', point: s0.point, normal: n, plateId: p.id, angleDeg: s0.angle, losMm: p.mm });
+    const inner = madd(s0.point, n, -(p.mm / 1000) - 0.02);
+    const strength = 1 - p.mm / (r.caliber * 1.3) * 0.6;
+    this.emitFragments(inner, scale(n, -1), s0.t + 0.05, Math.round(30 + r.filler * 12), 55, (40 + r.filler * 8) * strength, 'spall');
+    return this.finish();
+  }
+
+  /** Fragmentation HE: punches thin plates, otherwise blast on the outside (overpressure through thin roofs). */
+  runHe() {
+    const { r, v, state } = this;
+    const dir = norm(this.input.dir);
+    const s0 = this.strike();
+    if (!s0) return this.finish();
+    const p = s0.h.plate;
+    const n = normalOf(p);
+    if (this.rng() < ricochetChance(r, s0.angle, p.mm)) {
+      this.res.impacts.push({ t: s0.t, kind: 'ricochet', point: s0.point, normal: n, plateId: p.id, angleDeg: s0.angle });
+      return this.finish();
+    }
+    if (p.kind === 'era') state.eraSpent[p.id] = true;
+    const pen = penetrationAt(r, this.input.distance);
+    const los = losThickness(p, s0.angle, r);
+    if (p.kind === 'plate' && pen >= los) {
+      this.penetrated = true;
+      this.armorDefeated = los;
+      this.res.impacts.push({ t: s0.t, kind: 'pen', point: s0.point, normal: n, plateId: p.id, losMm: los, penMm: pen, angleDeg: s0.angle });
+      const inside = madd(s0.point, dir, 0.08);
+      this.emitFragments(inside, dir, s0.t + 0.02, Math.round(30 + r.filler * 20), 75, 35 + r.filler * 10, 'frag');
+      this.residual = pen - los;
+      return this.finish();
+    }
+    this.res.impacts.push({ t: s0.t, kind: 'explode', point: s0.point, normal: n, plateId: p.id, losMm: los, penMm: pen, angleDeg: s0.angle });
+    // Overpressure through a thin roof hurts the crew compartment beneath it.
+    if (n.y > 0.7 && p.mm <= 25 && r.filler >= 1) {
+      for (const c of v.crew.filter((c) => c.group === p.group || p.group === 'hull')) {
+        const torso = c.zones.find((z) => z.zone === 'torso')!;
+        const head = c.zones.find((z) => z.zone === 'head')!;
+        const hc = { x: (head.box.min.x + head.box.max.x) / 2, y: (head.box.min.y + head.box.max.y) / 2, z: (head.box.min.z + head.box.max.z) / 2 };
+        if (dist(hc, s0.point) > 1.6) continue;
+        this.damageCrew(c, torso, 22 * r.filler, hc, { x: 0, y: -1, z: 0 }, s0.t + 0.05, 0.04);
+        this.damageCrew(c, head, 10 * r.filler, hc, { x: 0, y: -1, z: 0 }, s0.t + 0.05, 0.03);
+      }
+    }
     return this.finish();
   }
 
@@ -388,7 +582,16 @@ export class ShotSim {
 
 export function simulateShot(v: Vehicle, r: Round, input: ShotInput, before: VehicleState): ShotResult {
   const sim = new ShotSim(v, r, input, before);
-  return sim.runKinetic();
+  switch (r.family) {
+    case 'HEAT':
+      return sim.runHeat();
+    case 'HESH':
+      return sim.runHesh();
+    case 'HE':
+      return sim.runHe();
+    default:
+      return sim.runKinetic();
+  }
 }
 
 // ------------------------------------------------------------------ summary

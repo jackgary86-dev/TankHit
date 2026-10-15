@@ -29,7 +29,9 @@ export function setXray(view: TankView, on: boolean) {
     m.userData.xray ??= XRAY_PLATE(view.vehicle.plates.find((p) => p.id === id)?.kind === 'era');
     m.material = on ? m.userData.xray : m.userData.solid;
     m.castShadow = !on;
-    view.plateEdges.get(id)!.visible = on;
+    const edge = view.plateEdges.get(id)!;
+    edge.userData.xray = on;
+    edge.visible = on && mesh.visible;
   }
   for (const o of view.exterior) {
     const m = o as Swappable;
