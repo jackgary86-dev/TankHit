@@ -8,8 +8,8 @@ export const velocityAt = (r: Round, distance: number) => r.velocity * Math.exp(
 
 const DENSITY = { tungsten: 17600, du: 18600, steel: 7850 } as const;
 const TARGET_DENSITY = 7850;
-/** Target-strength term, calibrated so M829A1 gives ~540 mm at the muzzle. */
-const LO_K = 1.83e6;
+/** Target-strength term, calibrated against the reference table in tests/reference.test.ts. */
+const LO_K = 1.5e6;
 
 /** Simplified Lanz–Odermatt long-rod model. Returns mm RHA at normal incidence. */
 export function lanzOdermatt(r: Round, v: number): number {
@@ -69,12 +69,39 @@ export function plateEquivalent(p: Plate, kinetic: boolean): number {
   return layers.reduce((s, l) => s + l.mm * (kinetic ? MATERIALS[l.mat].ke : MATERIALS[l.mat].ce), 0);
 }
 
-/** Line-of-sight RHA-equivalent thickness at the given impact angle (deg from the plate normal). */
+/**
+ * Lanz–Odermatt obliquity exponent: a long rod perforates more line-of-sight plate at an angle than it does
+ * head-on, so the armour it has to beat grows as 1/cos^0.775 rather than the full 1/cos.
+ */
+const ROD_OBLIQUITY = 0.775;
+
+/** RHA-equivalent armour the round must beat at the given impact angle (deg from the plate normal). */
 export function losThickness(p: Plate, angleDeg: number, r: Round): number {
   const eff = Math.max(0, angleDeg - normalization(r));
   const cos = Math.max(Math.cos((eff * Math.PI) / 180), 0.05);
-  return plateEquivalent(p, isKinetic(r.family)) / cos;
+  const equiv = plateEquivalent(p, isKinetic(r.family));
+  if (r.family === 'APFSDS') return equiv / Math.pow(cos, ROD_OBLIQUITY);
+  return equiv / cos;
 }
+
+/** Geometric line-of-sight thickness (mm of plate material along the ray), for display. */
+export function geometricLos(p: Plate, angleDeg: number): number {
+  return p.mm / Math.max(Math.cos((angleDeg * Math.PI) / 180), 0.05);
+}
+
+/**
+ * Probability an uncapped full-calibre shot breaks up on a plate thick relative to its calibre at high
+ * striking velocity. Capped shot and long rods never shatter.
+ */
+export function shatterChance(r: Round, v: number, plateMm: number): number {
+  if (r.family !== 'AP' || r.capped) return 0;
+  const ratio = plateMm / r.caliber;
+  if (ratio < 0.7 || v < 650) return 0;
+  return Math.min(0.9, (ratio - 0.7) * 1.5 + (v - 650) / 900);
+}
+
+/** An APHE fuze only arms on plates at least this fraction of the calibre thick (skirts do not arm it). */
+export const fuzeArms = (r: Round, plateMm: number) => plateMm >= r.caliber * 0.15;
 
 /** Probability (0..1) of a ricochet / fuze failure at this angle. */
 export function ricochetChance(r: Round, angleDeg: number, plateMm: number): number {

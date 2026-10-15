@@ -1,6 +1,6 @@
 // Shot simulation: traces the projectile through armor and interior and records a replayable timeline.
 import { normalOf, rayBox, rayPlate } from './geometry';
-import { isKinetic, losThickness, penetrationAt, ricochetChance } from './penetration';
+import { fuzeArms, isKinetic, losThickness, penetrationAt, ricochetChance, shatterChance, velocityAt } from './penetration';
 import { aliveCrew, checkIncapacitated, cloneState } from './state';
 import type {
   Crew,
@@ -59,7 +59,9 @@ export function collectHits(v: Vehicle, s: VehicleState, origin: Vec3, dir: Vec3
       }
     }
   }
-  return out.sort((a, b) => a.t - b.t);
+  out.sort((a, b) => a.t - b.t);
+  // A ray crossing the seam between two plates touches both at the same distance – charge only one.
+  return out.filter((h, i) => !(h.kind === 'plate' && i > 0 && out[i - 1].kind === 'plate' && h.t - out[i - 1].t < 2e-3));
 }
 
 /**
@@ -214,14 +216,20 @@ export class ShotSim {
           this.trace('ricochet', point, madd(point, refl, 4), t, SPEED.approach, P);
           return this.finish();
         }
+        if (entering && !entered && this.rng() < shatterChance(r, velocityAt(r, input.distance), p.mm)) {
+          this.res.impacts.push({ t, kind: 'shatter', point, normal: n, plateId: p.id, losMm: los, penMm: P, angleDeg: angle });
+          this.emitFragments(madd(point, n, 0.02), n, t, 14, 70, 20, 'frag');
+          P = 0;
+          break;
+        }
         if (P >= los) {
           P -= los;
           this.armorDefeated += los;
           this.penetrated = this.penetrated || (entering && p.kind === 'plate');
           this.res.impacts.push({ t, kind: 'pen', point, normal: n, plateId: p.id, losMm: los, penMm: P + los, angleDeg: angle });
-          if (entering && p.kind === 'plate' && r.family === 'APHE' && fuzeAt === Infinity) fuzeAt = h.t + (r.fuzeDelay ?? 1.2);
+          if (entering && r.family === 'APHE' && fuzeAt === Infinity && fuzeArms(r, p.mm)) fuzeAt = h.t + (r.fuzeDelay ?? 1.2);
           entered = entering && p.kind === 'plate' ? true : entered;
-          if (entering && p.kind === 'plate') this.spallFromPen(madd(point, dir, 0.03), dir, t, P, p.mm);
+          if (entering && p.kind === 'plate') this.spallFromPen(madd(point, dir, 0.03), dir, n, t, P, p.mm);
           if (!entering && entered) {
             // Leaving the vehicle: an APHE fuze still running means over-penetration with no burst.
             exited = true;
@@ -310,7 +318,7 @@ export class ShotSim {
           this.res.impacts.push({ t, kind: 'pen', point, normal: n, plateId: p.id, losMm: los, penMm: P + los, angleDeg: angle });
           if (entering && p.kind === 'plate') {
             entered = true;
-            this.spallFromPen(madd(point, dir, 0.03), dir, t, P, p.mm);
+            this.spallFromPen(madd(point, dir, 0.03), dir, n, t, P, p.mm);
           } else if (!entering && entered) {
             this.trace('jet', point, madd(point, dir, Math.min(2, P / JET_AIR_LOSS)), t, SPEED.jet, P);
             break;
@@ -517,9 +525,11 @@ export class ShotSim {
     if (!st.incapacitated && checkIncapacitated(this.v, c.id, st.zoneHp)) st.incapacitated = true;
   }
 
-  /** Spall cone thrown off the inside face after a penetration. */
-  spallFromPen(exit: Vec3, dir: Vec3, t: number, residual: number, plateMm: number) {
+  /** Spall cone thrown off the inside face after a penetration; `n` is the plate's outward normal. */
+  spallFromPen(exit: Vec3, dir: Vec3, n: Vec3, t: number, residual: number, plateMm: number) {
     const r = this.r;
+    // The cone leans from the shot line toward the plate's inner normal (the back face throws scabs straight off).
+    const axis = norm(madd(dir, n, -0.6));
     const resF = 0.6 + Math.min(1, residual / 200) * 0.6;
     let count: number, half: number, energy: number;
     switch (r.family) {
@@ -535,7 +545,7 @@ export class ShotSim {
         count = 20; half = 30; energy = 35;
     }
     count *= 0.7 + Math.min(plateMm, 150) / 250; // thicker plates throw more spall
-    this.emitFragments(exit, dir, t, Math.min(70, Math.round(count)), half, energy * resF, 'spall');
+    this.emitFragments(exit, axis, t, Math.min(70, Math.round(count)), half, energy * resF, 'spall');
   }
 
   /** Emit `count` fragments in a cone (half-angle deg; 180 = sphere) and trace each through the interior. */

@@ -194,6 +194,7 @@ export class App {
       if (imp.kind === 'pen') sfx.pen();
       else if (imp.kind === 'nonpen') sfx.nonpen();
       else if (imp.kind === 'ricochet') sfx.ricochet();
+      else if (imp.kind === 'shatter') sfx.nonpen();
       else sfx.blast();
     }
     for (const e of shot.bigEvents) {

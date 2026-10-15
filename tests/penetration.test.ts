@@ -8,10 +8,10 @@ const flat = (mm: number, layers?: { mat: any; mm: number }[]) =>
   plate('p', 'test', 'hull', [v3(0, 0, -1), v3(0, 0, 1), v3(0, 1, 1), v3(0, 1, -1)], layers ? { mm, layers } : mm, v3(-1, 0.5, 0));
 
 describe('kinetic penetration', () => {
-  it('M829A1 is in the 500-580 mm range up close', () => {
+  it('M829A1 is in the 540-650 mm range up close', () => {
     const p = penetrationAt(roundById('m829a1'), 10);
-    expect(p).toBeGreaterThan(500);
-    expect(p).toBeLessThan(580);
+    expect(p).toBeGreaterThan(540);
+    expect(p).toBeLessThan(650);
   });
 
   it('BR-365K is around 140 mm at 100 m', () => {
@@ -41,12 +41,13 @@ describe('kinetic penetration', () => {
 });
 
 describe('armor geometry', () => {
-  it('LOS thickness grows with angle (1/cos)', () => {
-    const r = roundById('m829a1');
+  it('LOS thickness grows with angle (1/cos) for full-calibre shot', () => {
+    const r = roundById('m82');
     const p = flat(100);
     expect(losThickness(p, 0, r)).toBeCloseTo(100, 5);
-    expect(losThickness(p, 60, r)).toBeGreaterThan(190);
-    expect(losThickness(p, 60, r)).toBeLessThan(200);
+    // 6 degrees of normalization on a capped round: 100 / cos(54) ~= 170.
+    expect(losThickness(p, 60, r)).toBeGreaterThan(165);
+    expect(losThickness(p, 60, r)).toBeLessThan(175);
   });
 
   it('full-calibre AP normalizes more than APFSDS', () => {

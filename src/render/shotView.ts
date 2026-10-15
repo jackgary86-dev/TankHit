@@ -64,7 +64,7 @@ export class ShotView {
     this.buildBigEvents();
     this.buildParticles();
     for (const imp of shot.impacts) {
-      if (imp.kind !== 'explode' && imp.kind !== 'scab' && imp.kind !== 'era') continue;
+      if (imp.kind !== 'explode' && imp.kind !== 'scab' && imp.kind !== 'era' && imp.kind !== 'shatter') continue;
       const blast = new THREE.Mesh(
         new THREE.SphereGeometry(1, 20, 14),
         new THREE.MeshBasicMaterial({ color: imp.kind === 'era' ? 0xfff0a0 : 0xffa040, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }),
