@@ -74,3 +74,33 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #15181c; }
 .mod { background: var(--panel-2); padding: 2px 6px; border-radius: 3px; font-size: 12px; border: 1px solid rgba(255,140,26,0.4); }
 .mod.dead { border-color: var(--bad); color: var(--bad); }
 .crewrow small { color: var(--muted); font-size: 10px; }
+
+.timeline {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 12px; width: min(760px, calc(100vw - 660px));
+  min-width: 420px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; font-size: 12px;
+}
+.timeline button { background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; cursor: pointer; font: inherit; }
+.timeline button.on { border-color: var(--accent); color: var(--accent); }
+.timeline .play { width: 36px; font-weight: 700; }
+.timeline .track { position: relative; flex: 1; min-width: 200px; }
+.timeline .track input { width: 100%; accent-color: var(--accent); }
+.timeline .ticks { position: absolute; left: 7px; right: 7px; top: -4px; height: 6px; pointer-events: none; }
+.timeline .ticks i { position: absolute; width: 3px; height: 8px; border-radius: 1px; background: #fff; transform: translateX(-1px); }
+.timeline .ticks i.pen { background: var(--good); }
+.timeline .ticks i.nonpen, .timeline .ticks i.detonation { background: var(--bad); }
+.timeline .ticks i.ricochet, .timeline .ticks i.fire { background: #ff8c1a; }
+.timeline .ticks i.blowout { background: var(--warn); }
+.timeline .time { font-variant-numeric: tabular-nums; min-width: 92px; }
+.timeline .keys { width: 100%; color: var(--muted); font-size: 10px; text-align: center; }
+.shotlog {
+  position: absolute; left: 50%; transform: translateX(-50%); bottom: 96px; max-width: min(760px, calc(100vw - 660px));
+  display: flex; gap: 6px; overflow-x: auto; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; font-size: 12px;
+}
+.shotlog .title { color: var(--muted); text-transform: uppercase; font-size: 10px; letter-spacing: 1px; align-self: center; padding: 0 4px; }
+.shotlog .entry { white-space: nowrap; background: var(--panel-2); color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 4px 8px; cursor: pointer; font: inherit; }
+.shotlog .entry.on { border-color: var(--accent); }
+.shotlog .entry.bad { color: var(--bad); }
+.shotlog .entry.warn { color: var(--warn); }
+.shotlog .entry.ok { color: var(--good); }
+.shotlog .entry.muted { color: var(--muted); }

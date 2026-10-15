@@ -47,6 +47,12 @@ export class App {
   private left = h('div', { class: 'panel left' });
   private right = h('div', { class: 'panel right hidden' });
   private aimBox = h('div', { class: 'aimbox' });
+  private timeline = h('div', { class: 'timeline hidden' });
+  private log = h('div', { class: 'shotlog hidden' });
+  private tlRange!: HTMLInputElement;
+  private tlTime!: HTMLSpanElement;
+  private tlPlay!: HTMLButtonElement;
+  private ride = -1;
   private downAt = { x: 0, y: 0 };
   private lastFrame = performance.now();
 
@@ -63,7 +69,7 @@ export class App {
     );
     this.aimMarker.renderOrder = 21;
     this.ctx.scene.add(this.aimLine, this.aimMarker);
-    this.ui.append(this.left, this.right);
+    this.ui.append(this.left, this.right, this.log, this.timeline);
     this.loadVehicle(this.vehicleId);
     this.bindInput();
     this.renderLeft();
@@ -98,6 +104,8 @@ export class App {
     this.shotView = null;
     applyDamage(this.tank, null, 0);
     this.renderRight();
+    this.renderTimeline();
+    this.renderLog();
   }
 
   // ------------------------------------------------------------ aiming
@@ -129,6 +137,68 @@ export class App {
     } else if (k === 'x') this.toggleXray();
     else if (k === 'c') this.cycleSection();
     else if (k === 'escape') this.clearAim();
+    else if (k === 'p' || k === 'enter') this.togglePlay();
+    else if (k === 'a') this.stepShot(-1);
+    else if (k === 'd') this.stepShot(1);
+    else if (k === 'w' || k === 's') this.rideShot((k === 'w' ? 1 : -1) * (e.shiftKey ? 0.6 : 0.2));
+    else if (k === 'r') this.resetCamera();
+  }
+
+  togglePlay() {
+    const shot = this.shots[this.current];
+    if (!shot) return;
+    if (!this.playing && this.replayT >= shot.duration - 1e-3) this.replayT = 0;
+    this.playing = !this.playing;
+    this.syncTimeline();
+  }
+
+  stepShot(d: number) {
+    if (!this.shots.length) return;
+    const i = Math.max(0, Math.min(this.shots.length - 1, this.current + d));
+    if (i !== this.current) this.showShot(i, true);
+  }
+
+  resetCamera() {
+    this.ride = -1;
+    this.ctx.camera.position.set(7.5, 4.5, 7.5);
+    this.ctx.controls.target.set(0, 1.1, 0);
+  }
+
+  /** Points along the main penetrator path of the current shot. */
+  private shellPath(): THREE.Vector3[] {
+    const shot = this.shots[this.current];
+    if (!shot) return [];
+    const pts: THREE.Vector3[] = [];
+    for (const t of shot.traces.filter((x) => x.kind === 'shell' || x.kind === 'jet' || x.kind === 'ricochet')) {
+      if (!pts.length) pts.push(new THREE.Vector3(t.from.x, t.from.y, t.from.z));
+      pts.push(new THREE.Vector3(t.to.x, t.to.y, t.to.z));
+    }
+    return pts;
+  }
+
+  /** Move the camera along the shot path (W/S). */
+  rideShot(delta: number) {
+    const pts = this.shellPath();
+    if (pts.length < 2) return;
+    const lens = pts.slice(1).map((p, i) => p.distanceTo(pts[i]));
+    const total = lens.reduce((a, b) => a + b, 0);
+    this.ride = Math.max(0, Math.min(total, (this.ride < 0 ? 4 : this.ride) + delta));
+    const at = (d: number) => {
+      let acc = 0;
+      for (let i = 0; i < lens.length; i++) {
+        if (acc + lens[i] >= d) return pts[i].clone().lerp(pts[i + 1], (d - acc) / Math.max(lens[i], 1e-6));
+        acc += lens[i];
+      }
+      return pts[pts.length - 1].clone();
+    };
+    const here = at(this.ride);
+    const ahead = at(Math.min(total, this.ride + 1.2));
+    const dir = ahead.clone().sub(here);
+    if (dir.lengthSq() < 1e-4) dir.copy(pts[pts.length - 1]).sub(pts[0]);
+    dir.normalize();
+    const side = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
+    this.ctx.camera.position.copy(here).addScaledVector(dir, -1.4).addScaledVector(side, 0.7).add(new THREE.Vector3(0, 0.6, 0));
+    this.ctx.controls.target.copy(here).addScaledVector(dir, 1.2);
   }
 
   toggleXray() {
@@ -223,7 +293,56 @@ export class App {
     this.ctx.scene.add(this.shotView.group);
     this.replayT = play ? 0 : shot.duration;
     this.playing = play;
+    this.ride = -1;
     this.renderRight();
+    this.renderTimeline();
+    this.renderLog();
+  }
+
+  renderTimeline() {
+    const shot = this.shots[this.current];
+    this.timeline.classList.toggle('hidden', !shot);
+    if (!shot) return;
+    this.tlPlay = h('button', { class: 'play', onclick: () => this.togglePlay() }, '>');
+    this.tlRange = h('input', { type: 'range', min: 0, max: shot.duration.toFixed(3), step: 0.005, value: this.replayT });
+    this.tlRange.addEventListener('input', () => {
+      this.playing = false;
+      this.replayT = Number(this.tlRange.value);
+      this.syncTimeline();
+    });
+    this.tlTime = h('span', { class: 'time' });
+    const speeds = [0.1, 0.25, 1].map((sp) =>
+      h('button', { class: `speed ${this.speed === sp ? 'on' : ''}`, onclick: () => { this.speed = sp; this.renderTimeline(); } }, `${sp}x`),
+    );
+    // Event ticks along the scrubber.
+    const ticks = h('div', { class: 'ticks' });
+    const mark = (t: number, cls: string) => ticks.append(h('i', { class: cls, style: `left:${(100 * t) / shot.duration}%` }));
+    for (const imp of shot.impacts) mark(imp.t, imp.kind);
+    for (const e of shot.bigEvents) mark(e.t, e.kind);
+    const track = h('div', { class: 'track' }, this.tlRange, ticks);
+    this.timeline.replaceChildren(this.tlPlay, track, this.tlTime, ...speeds,
+      h('span', { class: 'keys' }, 'P play/pause  ·  A/D switch shot  ·  W/S ride shot path (Shift = faster)  ·  R reset camera'));
+    this.syncTimeline();
+  }
+
+  private syncTimeline() {
+    const shot = this.shots[this.current];
+    if (!shot || !this.tlRange) return;
+    this.tlRange.value = String(this.replayT);
+    this.tlTime.textContent = `${this.replayT.toFixed(2)} / ${shot.duration.toFixed(2)} s`;
+    this.tlPlay.textContent = this.playing ? '||' : '>';
+  }
+
+  renderLog() {
+    this.log.classList.toggle('hidden', !this.shots.length);
+    this.log.replaceChildren(
+      h('span', { class: 'title' }, 'Hits'),
+      ...this.shots.map((s, i) =>
+        h('button', { class: `entry ${i === this.current ? 'on' : ''} ${verdictClass(s.summary.verdict)}`, onclick: () => this.showShot(i, true) },
+          h('b', {}, `#${i + 1}`), ` ${roundById(s.input.roundId).name} · ${s.summary.verdict}`),
+      ),
+    );
+    this.log.scrollLeft = this.log.scrollWidth;
   }
 
   // ------------------------------------------------------------ panels
@@ -336,7 +455,7 @@ export class App {
     this.right.classList.remove('hidden');
     const s = shot.summary;
     const v = this.vehicle;
-    const sev = s.verdict.startsWith('Catastrophic') || s.verdict === 'Knocked out' ? 'bad' : s.verdict === 'Disabled' || s.verdict === 'Crew injured' ? 'warn' : s.verdict.startsWith('Non') || s.verdict === 'Ricochet' ? 'muted' : 'ok';
+    const sev = verdictClass(s.verdict);
     const crewRows = v.crew.map((c) => {
       const lvl = woundLevel(v, shot.stateAfter, c.id);
       const zones = [...new Set(shot.crewHits.filter((x) => x.crewId === c.id).map((x) => x.zone))];
@@ -385,6 +504,7 @@ export class App {
         this.playing = false;
       }
     }
+    if (shot) this.syncTimeline();
     this.shotView?.update(this.replayT);
     this.updateSection();
     this.ctx.renderer.render(this.ctx.scene, this.ctx.camera);
@@ -410,6 +530,10 @@ export class App {
     }
     setSectionPlane(this.tank, plane);
   }
+}
+
+export function verdictClass(v: string) {
+  return v.startsWith('Catastrophic') || v === 'Knocked out' ? 'bad' : v === 'Disabled' || v === 'Crew injured' ? 'warn' : v.startsWith('Non') || v === 'Ricochet' ? 'muted' : 'ok';
 }
 
 function stat(k: string, v: string) {
