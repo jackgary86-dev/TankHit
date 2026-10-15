@@ -24,6 +24,8 @@ Releases: push a tag like `v0.2.0` and the `Release installers` workflow builds 
 - **Challenges** – eleven puzzles with fixed rounds/range and a shot limit; 1–3 stars by shots used, and stars unlock the later puzzles.
 - **Share link** – every shot can be reproduced from its URL (vehicle, round, range, aim, seed, turret yaw).
 - **Compare Rounds** – fire up to four rounds at the same point on a fresh tank with the same seed and compare side by side.
+- **Duel** – turn-based fight against an AI tank; both sides keep their damage, crew losses matter, the AI aims at your weakest spot.
+- **Daily** – one scenario per day for everyone, three attempts, shareable result.
 
 ## Controls
 
@@ -49,7 +51,7 @@ Releases: push a tag like `v0.2.0` and the `Release installers` workflow builds 
 
 ## Vehicles
 
-M4A3 (76) W Sherman, T-34-85, Tiger I, IS-3, T-72B, M1 Abrams and Leopard 2A4 – each is a data file in `src/data/vehicles/` built with the helpers in `src/data/builder.ts`. Add a tank by adding a file and registering it in `src/data/vehicles/index.ts`.
+M4A3 (76) W Sherman, T-34-85, Panther G, Tiger I, IS-3, T-55, M48 Patton, T-72B, M1 Abrams, Leopard 2A4 and Challenger 1 – each is a data file in `src/data/vehicles/` built with the helpers in `src/data/builder.ts`. Add a tank by adding a file and registering it in `src/data/vehicles/index.ts`.
 
 ## Simulation
 

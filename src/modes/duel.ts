@@ -21,6 +21,10 @@ export const GUN_ROUND: Record<string, string> = {
   m4a3: 'm82',
   tiger1: 'pzgr39',
   leo2a4: 'dm53',
+  panther: 'pzgr39_42',
+  t55: 'br412d',
+  m48: 'm431',
+  chally1: 'l23',
 };
 
 export interface DuelEvent {
