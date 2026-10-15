@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { FAMILIES, ROUNDS, roundById } from './data/rounds';
 import { VEHICLES, vehicleById } from './data/vehicles';
+import { GunnerView } from './render/gunner';
 import { KillOverlay, killColor } from './render/killOverlay';
 import { createScene, type SceneCtx } from './render/scene';
+import { dispersionMils, gaussian } from './sim/ballistics';
 import { killProbability } from './sim/killmap';
 import type { KillMapMessage, KillMapRequest } from './sim/killmap.worker';
 import { ShotView, applyDamage } from './render/shotView';
@@ -13,7 +15,7 @@ import { penetrationAt } from './sim/penetration';
 import { previewShot, simulateShot, type Preview } from './sim/shot';
 import { initialState, STATION_LOSS, woundLevel } from './sim/state';
 import type { Round, ShotResult, VehicleState } from './sim/types';
-import { DEG, v3, type Vec3 } from './sim/vec';
+import { DEG, makeRng, v3, type Vec3 } from './sim/vec';
 import { CHALLENGES, evaluateChallenge, loadStars, saveStars, type Challenge, type ChallengeResult } from './modes/challenges';
 import { compareRounds } from './modes/compare';
 import { fmt, h, select } from './ui/dom';
@@ -37,6 +39,8 @@ export class App {
   xray = true;
   heat = false;
   killMap = false;
+  gunner = new GunnerView();
+  private gunnerPickT = 0;
   private killWorker: Worker | null = null;
   private killOverlay = new KillOverlay();
   private killReq = 0;
@@ -95,7 +99,7 @@ export class App {
     );
     this.aimMarker.renderOrder = 21;
     this.ctx.scene.add(this.aimLine, this.aimMarker);
-    this.ui.append(this.topbar, this.left, this.right, this.comparePanel, this.log, this.timeline, this.legend, this.killLegend, this.killStatus, this.overlay);
+    this.ui.append(this.gunner.overlay, this.topbar, this.left, this.right, this.comparePanel, this.log, this.timeline, this.legend, this.killLegend, this.killStatus, this.overlay);
     this.buildLegend();
     this.ctx.scene.add(this.killOverlay.group);
     this.loadVehicle(this.vehicleId);
@@ -144,11 +148,25 @@ export class App {
   private bindInput() {
     const el = this.ctx.renderer.domElement;
     el.addEventListener('pointerdown', (e) => (this.downAt = { x: e.clientX, y: e.clientY }));
+    let last = { x: 0, y: 0 };
     el.addEventListener('pointermove', (e) => {
+      if (this.gunner.active) {
+        if (e.buttons & 1) this.gunner.onDrag(e.clientX - last.x, e.clientY - last.y, el.clientHeight, this.ctx.camera);
+        last = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      last = { x: e.clientX, y: e.clientY };
       this.hover = this.pick(e);
       if (!this.aim) this.updatePreview();
     });
+    el.addEventListener('wheel', (e) => {
+      if (!this.gunner.active) return;
+      e.preventDefault();
+      this.gunner.onWheel(e.deltaY);
+      this.layGun();
+    }, { passive: false });
     el.addEventListener('pointerup', (e) => {
+      if (this.gunner.active) return;
       if (Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) > 4 || e.button !== 0) return;
       const a = this.pick(e);
       if (a) {
@@ -175,6 +193,7 @@ export class App {
     else if (k === 'r') this.resetCamera();
     else if (k === 'h') this.toggleHeat();
     else if (k === 'k') this.toggleKillMap();
+    else if (k === 'g') this.toggleGunner();
     else if (k === 'q' || k === 'e') this.setTurretYaw(this.turretYaw + (k === 'e' ? 5 : -5));
     else if (k === 'm') this.toggleMute();
   }
@@ -250,6 +269,44 @@ export class App {
       h('div', { class: 'bar', style: `background: linear-gradient(90deg, ${grad})` }),
       h('div', { class: 'labels' }, ...[0, 25, 50, 75, 100].map((n) => h('span', {}, `${n}%`))),
     );
+  }
+
+  // ------------------------------------------------------------ gunner's sight
+
+  toggleGunner() {
+    if (this.gunner.active) {
+      const { target } = this.gunner.exit(this.ctx.camera);
+      this.ctx.controls.target.copy(target);
+      this.ctx.controls.enabled = true;
+      this.hover = null;
+      this.clearAim();
+    } else {
+      this.aim = null;
+      this.ctx.controls.enabled = false;
+      this.gunner.enter(this.ctx.camera, this.ctx.scene, this.ctx.controls.target, this.distance);
+      this.layGun();
+    }
+    this.renderLeft();
+  }
+
+  /** Re-lay the sight for the current round and range. */
+  private layGun() {
+    if (!this.gunner.active) return;
+    this.gunner.lay(this.round, this.distance, this.ctx.camera, this.ctx.renderer.domElement.clientHeight);
+  }
+
+  /** What is under the reticle right now (throttled: the aim box runs 16 simulations). */
+  private pollGunner(now: number) {
+    if (!this.gunner.active) return;
+    this.gunner.update(this.ctx.camera);
+    if (now - this.gunnerPickT < 120) return;
+    this.gunnerPickT = now;
+    const a = this.pickNdc(0, 0);
+    const changed = !!a !== !!this.hover || (a && this.hover && a.point.distanceToSquared(this.hover.point) > 1e-4);
+    if (changed) {
+      this.hover = a;
+      this.updatePreview();
+    }
   }
 
   toggleHeat() {
@@ -369,6 +426,7 @@ export class App {
 
   /** Shot direction for a target point under the current angle mode. */
   shotDir(point: THREE.Vector3): THREE.Vector3 {
+    if (this.gunner.active) return this.gunner.arrivalDir(point);
     if (this.respectCamera) return point.clone().sub(this.ctx.camera.position).normalize();
     // yaw 0 = shooting from the front (travelling -X), positive yaw swings to the left side.
     const y = this.yaw * DEG;
@@ -378,7 +436,11 @@ export class App {
 
   private pick(e: PointerEvent): Aim | null {
     const r = this.ctx.renderer.domElement.getBoundingClientRect();
-    this.pointer.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    return this.pickNdc(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  }
+
+  private pickNdc(x: number, y: number): Aim | null {
+    this.pointer.set(x, y);
     this.raycaster.setFromCamera(this.pointer, this.ctx.camera);
     const meshes = [...this.tank.plateMeshes.values()];
     const hit = this.raycaster.intersectObjects(meshes, false)[0];
@@ -537,13 +599,34 @@ export class App {
     if (this.challenge && this.challengeResult?.status !== 'active') return;
     const a = this.aim ?? this.hover;
     if (!a) return;
+    const seed = (Math.random() * 2 ** 31) | 0;
+    let origin = this.shotOrigin(a);
+    if (this.gunner.active) {
+      // Seeded dispersion: scatter the arrival point in the plane normal to the line of fire.
+      const rng = makeRng(seed ^ 0x5bd1e995);
+      const sigma = dispersionMils(this.round) / 1000;
+      const mx = gaussian(rng(), rng()) * sigma;
+      const my = gaussian(rng(), rng()) * sigma;
+      const right = new THREE.Vector3().crossVectors(a.dir, new THREE.Vector3(0, 1, 0)).normalize();
+      const up = new THREE.Vector3().crossVectors(right, a.dir).normalize();
+      const p = a.point.clone().addScaledVector(right, Math.tan(mx) * this.distance).addScaledVector(up, Math.tan(my) * this.distance);
+      origin = this.shotOrigin({ point: p, dir: a.dir });
+    }
     const dir = v3(a.dir.x, a.dir.y, a.dir.z);
     const shot = simulateShot(
       this.vehicle,
       this.round,
-      { vehicleId: this.vehicleId, roundId: this.roundId, distance: this.distance, origin: this.shotOrigin(a), dir, seed: (Math.random() * 2 ** 31) | 0, turretYaw: this.turretYaw },
+      { vehicleId: this.vehicleId, roundId: this.roundId, distance: this.distance, origin, dir, seed, turretYaw: this.turretYaw },
       this.vstate,
     );
+    if (this.gunner.active) {
+      // Leave the sight so the replay plays in the cutaway; G returns to the gun.
+      const { target } = this.gunner.exit(this.ctx.camera);
+      this.ctx.controls.enabled = true;
+      this.ctx.controls.target.copy(target);
+      this.hover = null;
+      this.aim = null;
+    }
     this.vstate = shot.stateAfter;
     this.shots.push(shot);
     if (this.challenge) {
@@ -619,6 +702,7 @@ export class App {
   // ------------------------------------------------------------ panels
 
   renderLeft() {
+    this.layGun();
     const r = this.round;
     const fam = r.family;
     const allowed = this.challenge ? ROUNDS.filter((x) => this.challenge!.rounds.includes(x.id)) : ROUNDS;
@@ -632,6 +716,7 @@ export class App {
       this.distance = Number(dist.value);
       distVal.textContent = `${this.distance} m`;
       penVal.textContent = `${fmt(penetrationAt(this.round, this.distance))} mm`;
+      this.layGun();
       this.updatePreview();
     });
     const angleCtl = h('div', { class: this.respectCamera ? 'hidden' : 'angles' });
@@ -722,6 +807,7 @@ export class App {
         h('button', { class: this.section !== 'off' ? 'on' : '', onclick: () => this.cycleSection() }, `Section: ${this.section} [C]`),
         h('button', { class: this.heat ? 'on' : '', onclick: () => this.toggleHeat() }, 'Armor map [H]'),
         h('button', { class: this.killMap ? 'on' : '', onclick: () => this.toggleKillMap() }, 'Kill map [K]'),
+        h('button', { class: this.gunner.active ? 'on' : '', onclick: () => this.toggleGunner() }, "Gunner's sight [G]"),
         h('button', { class: muted ? '' : 'on', onclick: () => this.toggleMute() }, muted ? 'Sound off [M]' : 'Sound on [M]'),
       ),
       h('div', { class: 'hint' }, 'Drag to orbit · click armor to lock aim · Space to fire'),
@@ -809,7 +895,8 @@ export class App {
   private frame = (now: number) => {
     const dt = Math.min(0.1, (now - this.lastFrame) / 1000);
     this.lastFrame = now;
-    this.ctx.controls.update();
+    if (this.gunner.active) this.pollGunner(now);
+    else this.ctx.controls.update();
     const shot = this.shots[this.current];
     if (shot && this.playing) {
       const before = this.replayT;
@@ -833,6 +920,10 @@ export class App {
 
   private updateSection() {
     let plane: THREE.Plane | null = null;
+    if (this.gunner.active) {
+      setSectionPlane(this.tank, null);
+      return;
+    }
     const shot = this.shots[this.current];
     const a = this.aim ?? this.hover;
     if (this.section === 'shot') {

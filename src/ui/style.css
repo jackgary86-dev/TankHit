@@ -150,3 +150,13 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #15181c; }
 
 .legend.kill { bottom: 86px; }
 .killstatus { position: absolute; right: 12px; bottom: 160px; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 4px 10px; font-size: 11px; color: var(--accent); }
+
+.sight { position: absolute; inset: 0; pointer-events: none; }
+.reticle { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 800px; height: 800px; }
+.reticle svg { width: 100%; height: 100%; overflow: visible; }
+.reticle line { stroke: #ffb347; stroke-width: 1.5; opacity: 0.9; }
+.reticle text { fill: #ffb347; font-size: 11px; font-family: 'Segoe UI', system-ui, sans-serif; opacity: 0.9; }
+.reticle .dot { fill: #ffb347; }
+.reticle .sigma { fill: none; stroke: #ffb347; stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.6; }
+.sighthud { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--accent); white-space: nowrap; }
+.sight:not(.hidden) ~ .timeline, .sight:not(.hidden) ~ .shotlog { display: none; }

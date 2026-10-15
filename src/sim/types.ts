@@ -246,6 +246,7 @@ export interface BigEvent {
 }
 
 export type Verdict =
+  | 'Miss'
   | 'Ricochet'
   | 'Non-penetration'
   | 'Penetration – no damage'

@@ -658,6 +658,7 @@ function summarize(sim: ShotSim): ShotSummary {
   else if (crewHit.length > 0) verdict = 'Crew injured';
   else if (ricochet) verdict = 'Ricochet';
   else if (sim.penetrated || anyInside) verdict = 'Penetration – no damage';
+  else if (res.impacts.length === 0) verdict = 'Miss';
   else verdict = 'Non-penetration';
   if (alive < 2) state.destroyed = true;
 
