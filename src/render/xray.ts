@@ -116,6 +116,14 @@ export function setSectionPlane(view: TankView, plane: THREE.Plane | null) {
   }
 }
 
+/** Weld seams are only convincing up close; at a distance thin black lines read as a wireframe. */
+export function updateSeams(view: TankView, cameraPos: THREE.Vector3) {
+  if (view.xray) return;
+  const d = cameraPos.distanceTo(view.pivot.clone().setY(1));
+  const k = Math.max(0, Math.min(1, (12 - d) / 8));
+  for (const [, edge] of view.plateEdges) (edge.material as THREE.LineBasicMaterial).opacity = 0.45 * k;
+}
+
 /**
  * Plane containing the shot line and the vertical, oriented so the half facing the camera is cut away.
  * Falls back to a camera-facing plane through `point` when the shot is near vertical.

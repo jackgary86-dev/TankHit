@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { muted, setMuted } from '../render/audio';
-import { cameraSectionPlane, HEAT_STOPS, heatColor, setSectionPlane, setXray, shotSectionPlane } from '../render/xray';
+import { cameraSectionPlane, HEAT_STOPS, heatColor, setSectionPlane, setXray, shotSectionPlane, updateSeams } from '../render/xray';
 import { h } from './dom';
 import type { App } from '../app';
 
@@ -38,6 +38,7 @@ export function cycleSection(app: App) {
 }
 
 export function updateSection(app: App) {
+  updateSeams(app.tank, app.ctx.camera.position);
   let plane: THREE.Plane | null = null;
   // The cutaway only makes sense in X-ray; a clipped painted hull just looks like the tank is missing a piece.
   if (app.gunner.active || !app.xray) {

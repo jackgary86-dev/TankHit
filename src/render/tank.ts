@@ -272,7 +272,10 @@ function buildDummy(c: Crew, view: TankView): THREE.Group {
 function addRunningGear(v: Vehicle, hull: THREE.Group, view: TankView) {
   const { hullLength: L, hullWidth: W, trackWidth: tw, groundClearance: gc, wheelCount, wheelRadius: r } = v.visual;
   const trackMat = new THREE.MeshStandardMaterial({ color: 0x2a2a28, roughness: 0.9, metalness: 0.4 });
+  const stripeMat = new THREE.MeshStandardMaterial({ color: 0x4a4a46, roughness: 0.85, metalness: 0.5 });
+  const rubberMat = new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.95, metalness: 0.05 });
   const wheelMat = new THREE.MeshStandardMaterial({ color: v.visual.color, roughness: 0.8, metalness: 0.2 });
+  const hubMat = new THREE.MeshStandardMaterial({ color: 0x9a9a92, roughness: 0.5, metalness: 0.6 });
   for (const side of [1, -1]) {
     const z = side * (W / 2 + tw / 2 + 0.02);
     // Track loop as a flattened rounded box.
@@ -283,15 +286,28 @@ function addRunningGear(v: Vehicle, hull: THREE.Group, view: TankView) {
     track.userData = { kind: 'gear' };
     hull.add(track);
     view.exterior.push(track);
+    // Guide-horn stripe along the top run of the track so it reads as a track, not a slab.
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(L + 0.1, 0.03, tw * 0.25), stripeMat);
+    stripe.position.set(0, gc + 0.42 + 0.005, z);
+    stripe.userData = { kind: 'gear' };
+    hull.add(stripe);
+    view.exterior.push(stripe);
     for (let i = 0; i < wheelCount; i++) {
       const x = -L / 2 + 0.5 + (i * (L - 1.0)) / Math.max(1, wheelCount - 1);
-      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.92, r * 0.92, tw + 0.04, 24), wheelMat);
-      wheel.rotation.x = Math.PI / 2;
+      // Road wheel: black rubber tyre, painted disc, bright hub.
+      const wheel = new THREE.Group();
+      const tyre = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.92, r * 0.92, tw + 0.04, 28), rubberMat);
+      const disc = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.74, r * 0.74, tw + 0.07, 24), wheelMat);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.22, r * 0.22, tw + 0.1, 16), hubMat);
+      for (const m of [tyre, disc, hub]) {
+        m.rotation.x = Math.PI / 2;
+        m.castShadow = true;
+        m.userData = { kind: 'gear' };
+        wheel.add(m);
+        view.exterior.push(m);
+      }
       wheel.position.set(x, r * 0.95, z);
-      wheel.castShadow = true;
-      wheel.userData = { kind: 'gear' };
       hull.add(wheel);
-      view.exterior.push(wheel);
     }
     // Fender
     const fender = new THREE.Mesh(new THREE.BoxGeometry(L + 0.3, 0.02, tw + 0.06), wheelMat);
