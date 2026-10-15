@@ -99,10 +99,45 @@ function exitedVehicle(last: Trace, impacts: ImpactEvent[]): boolean {
 
 // ------------------------------------------------------------------ meshes
 
-const STEEL = () => new THREE.MeshStandardMaterial({ color: 0x8c9099, roughness: 0.35, metalness: 0.9 });
-const BRASS = () => new THREE.MeshStandardMaterial({ color: 0xb08d57, roughness: 0.4, metalness: 0.8 });
-const DARK = () => new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.6, metalness: 0.7 });
-const TUNGSTEN = () => new THREE.MeshStandardMaterial({ color: 0x6f737a, roughness: 0.3, metalness: 1.0, emissive: 0x000000 });
+// Finishes per family, matching the ammo-rack colours in render/tank.ts so a shell is identifiable at a glance.
+const FAMILY_PAINT: Record<Round['family'], number> = { APFSDS: 0x1d1f22, AP: 0x9aa3ad, APHE: 0x4a4f55, HEAT: 0x5f6a3c, HESH: 0x1a1a1a, HE: 0x4f5a2e };
+const BAND_PAINT: Record<Round['family'], number> = { APFSDS: 0xd8d8d8, AP: 0xffffff, APHE: 0xffffff, HEAT: 0x111111, HESH: 0xffd23f, HE: 0xffd23f };
+
+let roughTex: THREE.Texture | null = null;
+/** Faint machining/wear roughness so the finishes do not read as flat plastic. */
+function roughness(): THREE.Texture | null {
+  if (roughTex) return roughTex;
+  if (typeof document === 'undefined') return null; // unit tests run without a DOM
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const g = c.getContext('2d')!;
+  for (let y = 0; y < 64; y++) {
+    for (let x = 0; x < 64; x++) {
+      const v = 150 + Math.round(60 * Math.abs(Math.sin(x * 0.9 + y * 0.05)) + (Math.sin(x * 12.9898 + y * 78.233) * 43758.5453 % 1) * 25);
+      g.fillStyle = `rgb(${v},${v},${v})`;
+      g.fillRect(x, y, 1, 1);
+    }
+  }
+  roughTex = new THREE.CanvasTexture(c);
+  roughTex.wrapS = roughTex.wrapT = THREE.RepeatWrapping;
+  roughTex.repeat.set(6, 2);
+  return roughTex;
+}
+
+const paint = (color: number, metalness: number, rough: number) =>
+  new THREE.MeshStandardMaterial({ color, roughness: rough, metalness, roughnessMap: roughness(), emissive: 0x000000 });
+const BRASS = () => new THREE.MeshStandardMaterial({ color: 0xb08d57, roughness: 0.45, metalness: 0.85, roughnessMap: roughness() });
+const DARK = () => paint(0x3a3d42, 0.7, 0.6);
+const TUNGSTEN = () => paint(0x5a5e66, 1.0, 0.3);
+/** Painted body for a family, with a lighter ogive on AP shot (bare steel nose). */
+const BODY = (f: Round['family']) => paint(FAMILY_PAINT[f], f === 'AP' ? 0.9 : 0.5, f === 'AP' ? 0.4 : 0.6);
+/** Thin coloured ring: identification band around the body. */
+function markingBand(radius: number, x: number, color: number, width: number): THREE.Mesh {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(radius * 1.015, radius * 1.015, width, 24, 1, true), new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.2, side: THREE.DoubleSide }));
+  m.rotation.z = -Math.PI / 2;
+  m.position.x = x;
+  return m;
+}
 
 /** Off by default: projectiles are true to calibre and rod length and the auto camera does the work. */
 let readableSize = false;
@@ -161,6 +196,7 @@ export function buildProjectile(r: Round): ProjectileParts {
     tip.rotateZ(-Math.PI / 2);
     tip.translate(L * 0.425, 0, 0);
     body = new THREE.Mesh(mergeGeo([rodGeo, tip]), TUNGSTEN());
+    body.add(markingBand(D / 2, -L * 0.3, BAND_PAINT.APFSDS, L * 0.04));
     // Fins at the base.
     for (let i = 0; i < 5; i++) {
       const fin = new THREE.Mesh(new THREE.BoxGeometry(L * 0.12, D * 2.2, D * 0.25), DARK());
@@ -189,7 +225,8 @@ export function buildProjectile(r: Round): ProjectileParts {
     const probe = new THREE.CylinderGeometry(cal * 0.08, cal * 0.06, length * 0.2, 8);
     probe.rotateZ(-Math.PI / 2);
     probe.translate(length * 0.52, 0, 0);
-    body = new THREE.Mesh(mergeGeo([bodyGeo, nose, probe]), DARK());
+    body = new THREE.Mesh(mergeGeo([bodyGeo, nose, probe]), BODY('HEAT'));
+    body.add(markingBand(cal / 2, -length * 0.2, BAND_PAINT.HEAT, cal * 0.12));
     for (let i = 0; i < 6; i++) {
       const fin = new THREE.Mesh(new THREE.BoxGeometry(length * 0.14, cal * 0.9, cal * 0.04), DARK());
       fin.position.set(-length * 0.33, 0, 0);
@@ -207,7 +244,8 @@ export function buildProjectile(r: Round): ProjectileParts {
     base.translate(-length * 0.275, 0, 0);
     const nose = ogive(length * 0.55, cal / 2, blunt);
     nose.translate(-length * 0.05, 0, 0);
-    body = new THREE.Mesh(mergeGeo([base, nose]), r.family === 'HE' || r.family === 'HESH' ? DARK() : STEEL());
+    body = new THREE.Mesh(mergeGeo([base, nose]), BODY(r.family));
+    body.add(markingBand(cal / 2, -length * 0.05, BAND_PAINT[r.family], cal * 0.14));
     const band = new THREE.Mesh(new THREE.CylinderGeometry(cal * 0.52, cal * 0.52, cal * 0.18, 24), BRASS());
     band.rotation.z = -Math.PI / 2;
     band.position.set(-length * 0.38, 0, 0);
@@ -248,7 +286,6 @@ const SABOT_T = 0.12; // replay seconds after launch when the petals peel away
 /** Drives a projectile mesh along a shot's traces; everything is a function of replay time. */
 export class ProjectileView {
   readonly parts: ProjectileParts;
-  private glow: THREE.PointLight;
   private trail: THREE.Mesh;
   private tumbleAxis = new THREE.Vector3(0.3, 1, 0.2).normalize();
   /** Shards of the shell body thrown when it shatters or bursts. */
@@ -258,8 +295,6 @@ export class ProjectileView {
   constructor(readonly round: Round, readonly traces: Trace[], readonly impacts: ImpactEvent[], seed = 1) {
     this.parts = buildProjectile(round);
     this.buildChunks(seed);
-    this.glow = new THREE.PointLight(0xff8a40, 0, 0.5, 2);
-    this.parts.group.add(this.glow);
     // Fading ribbon behind the nose: a unit cone along -X, scaled to the recent path each frame.
     const cone = new THREE.ConeGeometry(1, 1, 10, 1, true);
     cone.rotateZ(Math.PI / 2); // tip toward +X (the shell), base trailing behind
@@ -383,8 +418,7 @@ export class ProjectileView {
       body.position.x = -this.parts.length * 0.5 * (1 - k);
       const mat = body.material as THREE.MeshStandardMaterial;
       const heat = p.sinceImpact >= 0 ? Math.max(0, 1 - p.sinceImpact / 1.5) : 0;
-      mat.emissive.setRGB(heat, heat * 0.35, heat * 0.05);
-      this.glow.intensity = heat * 0.5;
+      mat.emissive.setRGB(heat * 1.4, heat * 0.5, heat * 0.08); // bright enough to bloom
     } else {
       const mat = body.material as THREE.MeshStandardMaterial;
       if (this.round.family === 'APFSDS') {
@@ -392,8 +426,7 @@ export class ProjectileView {
         mat.emissive.setRGB(heat, heat * 0.35, heat * 0.05);
       }
       const heat = p.sinceImpact >= 0 ? Math.max(0, 0.6 - p.sinceImpact / 1.2) : 0;
-      mat.emissive.setRGB(heat, heat * 0.4, heat * 0.08);
-      this.glow.intensity = heat * 0.35;
+      mat.emissive.setRGB(heat * 1.2, heat * 0.45, heat * 0.08);
     }
     // Ballistic cap is stripped on the first plate.
     if (this.parts.cap) this.parts.cap.visible = p.sinceImpact < 0;
